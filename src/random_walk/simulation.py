@@ -148,7 +148,12 @@ def summarize(
         x_hi = float(finals.max())
     x = np.linspace(x_lo, x_hi, 400)
 
-    if wall_enabled:
+    if sigma == 0:
+        # theta = +/-90: every step goes the same way, so every walk ends in the same place.
+        # There is no spread for a curve to describe (and its formula would divide by zero).
+        show_curve = False
+        curve = np.zeros_like(x)
+    elif wall_enabled:
         show_curve = theory.wall_curve_valid(theta)
         curve = theory.half_normal_pdf(x, wall_value, sigma)
     else:

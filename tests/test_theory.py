@@ -31,6 +31,11 @@ def test_final_sd_scales_with_abs_cos_theta():
         assert theory.final_sd(100, theta) == pytest.approx(expected)
 
 
+@pytest.mark.parametrize("theta", [90, -90])
+def test_final_sd_is_exactly_zero_when_fully_biased(theta):
+    assert theory.final_sd(1000, theta) == 0
+
+
 def test_normal_pdf_integrates_to_one():
     x = np.linspace(-200, 200, 20001)
     area = np.trapezoid(theory.normal_pdf(x, 5.0, 20.0), x)

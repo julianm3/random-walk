@@ -62,6 +62,8 @@ numpy (>=2.0), dearpygui. Dev: pytest, ruff. Optional: mypy.
   STEPS, so histogram bins are width 2. Bin width 1 leaves every other bin empty.
 - Theory curve, no wall: Normal(mean = -STEPS*sin(theta), sd = sqrt(STEPS)*|cos(theta)|).
   Per-step mean is -sin(theta), per-step variance is cos^2(theta).
+- At theta = +/-90 the sd is exactly 0 (computed as sqrt(STEPS*(1 - sin^2)), never via cos,
+  which is ~6e-17 at 90 degrees) and `summarize()` hides the curve, with or without a wall.
 - Theory curve, wall: half-normal approximation, sd = sqrt(STEPS). Valid only at theta = 0
   (reflection principle needs a driftless walk). Hidden when theta != 0.
 - docs/theory.md has the derivations and the known limitations (see Open items).
@@ -116,10 +118,9 @@ numpy (>=2.0), dearpygui. Dev: pytest, ruff. Optional: mypy.
 ## Open items
 
 - Planned: a seed control in the UI.
-- Known physics issues, deliberately left as-is by the refactor (see docs/theory.md):
-  theta = +/-90 gives sd = 0 (division by zero in the curves). The wall curve is a half-normal
-  centred on the wall and ignores that the walk starts at 0; the folded normal
-  phi(y) + phi(2w - y) is the correct large-STEPS curve at theta = 0.
+- Known physics issue (see docs/theory.md): the wall curve is a half-normal centred on the
+  wall and ignores that the walk starts at 0; the folded normal phi(y) + phi(2w - y) is the
+  correct large-STEPS curve at theta = 0.
 - Memory: `simulate_paths` at MAX_JUMPS allocates two int64 (runs, steps) arrays (~400 MB
   each).
 - Decide on a GUI testing approach and on CI (GitHub Actions).

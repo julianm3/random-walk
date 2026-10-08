@@ -27,8 +27,13 @@ The final position after STEPS = n steps is a sum of n independent steps, so
 By the central limit theorem, for large n the final position is approximately
 Normal(mean, sd). That is the theory curve drawn when the wall is off.
 
-At theta = +/-90 the sd is 0 and the walk is deterministic, so there is no normal curve to
-draw. See *Known limitations* below.
+At theta = +/-90 the sd is 0 and the walk is deterministic: every walk ends at -/+n. There is
+no spread for a curve to describe, so the app hides the theory curve, with or without a wall.
+
+The code computes the sd as sqrt(n (1 - sin^2(theta))) rather than sqrt(n) |cos(theta)|. The
+two are equal, but in floating point cos(90 degrees) is about 6e-17, not 0, while sin(90
+degrees) is exactly 1. With the cos form, the sd at +/-90 came out as about 2e-15, and the
+"normal" curve peaked near 1e14, squashing the histogram flat when the axes were fitted to it.
 
 ## Parity
 
@@ -68,10 +73,6 @@ different and harder problem, so the wall curve is hidden whenever theta != 0.
 
 ## Known limitations
 
-These are recorded here and deliberately left unchanged by the package refactor.
-
-- **theta = +/-90:** sd = 0, so the curve formulas divide by zero. You get NaNs and numpy
-  warnings instead of a curve.
 - **Wall curve ignores the starting offset:** the half-normal assumes the walk starts at the
   wall, but it starts at 0. With the defaults (wall -30, 1000 steps, sd about 31.6) the offset
   is about one sd and the curve visibly misfits. The folded normal above is the large-n fix

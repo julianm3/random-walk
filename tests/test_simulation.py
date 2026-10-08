@@ -147,6 +147,19 @@ def test_summarize_hides_wall_curve_when_biased():
     assert not summarize(finals, 100, True, -10, theta=15).show_curve
 
 
+@pytest.mark.filterwarnings("error")  # no divide-by-zero warnings from the curve formulas
+@pytest.mark.parametrize("theta", [90, -90])
+@pytest.mark.parametrize("wall_enabled", [False, True])
+def test_summarize_hides_curve_when_fully_biased(theta, wall_enabled):
+    # Regression: at +/-90 the sd is 0, and the curve used to spike to ~1e14, swamping the
+    # histogram when the plot axes were fitted to it.
+    finals = simulate(200, 100, wall=-10 if wall_enabled else None, theta=theta, rng=rng())
+    s = summarize(finals, 100, wall_enabled, wall_value=-10, theta=theta)
+    assert not s.show_curve
+    assert np.isfinite(s.curve_y).all() and s.curve_y.max() == 0
+    assert (s.counts * 2).sum() == pytest.approx(1.0)
+
+
 def test_summarize_respects_fixed_bins_and_curve_range():
     finals = simulate(500, 100, wall=None, rng=rng())
     bins = np.arange(-101, 102, 2)

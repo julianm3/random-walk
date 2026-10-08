@@ -21,8 +21,14 @@ def final_mean(steps: int, theta: float) -> float:
 
 
 def final_sd(steps: int, theta: float) -> float:
-    """Final-position sd of a walk with no wall: sqrt(steps) * (per-step sd |cos(theta)|)."""
-    return float(np.sqrt(steps) * abs(np.cos(np.radians(theta))))
+    """Final-position sd of a walk with no wall: sqrt(steps) * (per-step sd |cos(theta)|).
+
+    Computed as sqrt(steps * (1 - sin^2(theta))), which equals the above but is exactly 0 at
+    theta = +/-90 (sin is exactly +/-1.0 there, while cos(90 degrees) is ~6e-17 in floating
+    point), so callers can test for the deterministic case with `== 0`.
+    """
+    sin = np.sin(np.radians(theta))
+    return float(np.sqrt(steps * (1 - sin**2)))
 
 
 def normal_pdf(x: NDArray[np.float64], mean: float, sd: float) -> NDArray[np.float64]:
