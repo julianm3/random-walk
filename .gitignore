@@ -24,3 +24,6 @@ Thumbs.db
 
 # Dear PyGui
 imgui.ini
+
+# Fonts downloaded for exploration (see tools/font_explorer.py)
+tools/fonts/

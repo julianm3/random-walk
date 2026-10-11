@@ -2,15 +2,24 @@
 
 An interactive explorer for 1D random walks. Each walk takes STEPS jumps of +1 or -1, with an
 optional slope bias and an optional reflecting wall. The app runs thousands of walks and shows
-the results as a static histogram and as several animations.
+the results as a histogram and as several animations.
 
-## Features
+> **The GUI is being rebuilt.** This branch (`main`) currently contains the simulation core
+> and its tests, but no user interface; `random-walk` prints a notice. The previous
+> Dear PyGui interface is on the [`ui_prototype`](https://github.com/julianm3/random-walk/tree/ui_prototype) branch
+> (tag `dpg-final`):
+>
+> ```powershell
+> git checkout ui_prototype
+> ```
+
+## Features (previous GUI, to be carried into the new one)
 
 - **Shared parameters:** RUNS, STEPS, an optional reflecting WALL, and a SLOPE bias (theta,
   -90 to 90 degrees).
-- **Static tab:** a histogram of final positions, with the theoretical curve overlaid.
-- **Animation tab:** four views on one shared timeline, each with play, pause, reverse,
-  fast-forward, step and scrub controls:
+- **Histogram:** final positions, with the theoretical curve overlaid.
+- **Animations** on a shared timeline, with play, pause, reverse, fast-forward, step and scrub
+  controls:
   - *Distribution*: runs are added one at a time to a growing histogram.
   - *Single Walk*: watch one chosen walk (the max, the min, or the nth) step by step.
   - *Evolving Histogram*: where every walk is, at each step.
@@ -24,7 +33,6 @@ You need Python 3.11 or newer. On Windows:
 py -m venv .venv
 .venv\Scripts\activate
 py -m pip install -e ".[dev]"
-random-walk            # or: py -m random_walk
 ```
 
 ## Development
@@ -46,8 +54,9 @@ src/random_walk/
     simulation.py    simulate, simulate_paths, summarize (numpy only)
     theory.py        slope formula, normal and half-normal curves
     playback.py      timeline playback state (no GUI imports)
-    gui/             Dear PyGui front end: app, controls, transport, static and animation tabs
-tests/               unit tests for everything outside gui/
+    cli.py           command-line entry point
+tests/               unit tests for the core
+tools/               font exploration scripts (pip install -e ".[tools]")
 docs/                theory and design notes
 legacy/              the original single-file app, kept for reference
 ```

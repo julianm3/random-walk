@@ -1,3 +1,5 @@
-from random_walk.gui.app import main
+import sys
 
-main()
+from random_walk.cli import main
+
+sys.exit(main())

@@ -12,7 +12,6 @@ license-files = ["LICENSE"]
 requires-python = ">=3.11"
 dependencies = [
     "numpy>=2.0",
-    "dearpygui>=2.0",
 ]
 
 [project.optional-dependencies]
@@ -20,9 +19,14 @@ dev = [
     "pytest>=8",
     "ruff>=0.6",
 ]
+# For the scripts in tools/ (font exploration), not the package itself.
+tools = [
+    "dearpygui>=2.0",
+    "fonttools>=4.40",
+]
 
 [project.scripts]
-random-walk = "random_walk.gui.app:main"
+random-walk = "random_walk.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/random_walk"]
