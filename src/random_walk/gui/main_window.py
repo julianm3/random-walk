@@ -14,12 +14,17 @@
 The drawing area takes all spare space as the window resizes. The slider row keeps a fixed
 width, stays centred, and keeps its spacing from the drawing area and the window's bottom.
 Nothing is connected to the simulation yet.
+
+TEMPORARY: a font selector at the top left switches the interface font live, to compare the
+candidates in gui/ui_fonts.py. Remove it once a font is chosen.
 """
 
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QApplication,
+    QComboBox,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -30,7 +35,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from random_walk.gui import symbols
+from random_walk.gui import symbols, ui_fonts
 
 TITLE = "Random Walk"
 SUMMARY = "1000 Steps, 10000 Times"  # plain text for now
@@ -60,7 +65,7 @@ QSlider::handle:horizontal {{
 
 
 class MainWindow(QMainWindow):
-    def __init__(self) -> None:
+    def __init__(self, ui_font: str = ui_fonts.SYSTEM) -> None:
         super().__init__()
         self.setWindowTitle(TITLE)
         self.resize(*INITIAL_SIZE)
@@ -72,10 +77,11 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central)
 
         self.title = QLabel(TITLE)
-        font = self.title.font()
-        font.setPointSize(TITLE_POINT_SIZE)
-        self.title.setFont(font)
-        layout.addWidget(self.title, alignment=Qt.AlignmentFlag.AlignRight)
+        title_row = QHBoxLayout()
+        title_row.addLayout(self._build_font_selector())  # TEMPORARY
+        title_row.addStretch(1)
+        title_row.addWidget(self.title)
+        layout.addLayout(title_row)
 
         # Placeholder for the plot; stretch=1 gives it all the spare space on resize.
         self.drawing_area = QFrame()
@@ -86,13 +92,33 @@ class MainWindow(QMainWindow):
         self.summary = QLabel(SUMMARY)
         self.summary.setFrameShape(QFrame.Shape.Box)
         self.summary.setMargin(6)  # padding inside the frame
-        font = self.summary.font()
-        font.setPointSize(SUMMARY_POINT_SIZE)
-        self.summary.setFont(font)
         layout.addWidget(self.summary, alignment=Qt.AlignmentFlag.AlignRight)
 
         layout.addSpacing(50)
         layout.addLayout(self._build_slider_row())
+
+        self.set_ui_font(ui_font)
+
+    def set_ui_font(self, name: str) -> None:
+        """Switch the interface text to candidate font `name` (see gui/ui_fonts.py). The
+        symbol buttons keep their own font."""
+        QApplication.setFont(ui_fonts.ui_font(name))  # every widget without its own font
+        self.title.setFont(ui_fonts.ui_font(name, TITLE_POINT_SIZE))
+        self.summary.setFont(ui_fonts.ui_font(name, SUMMARY_POINT_SIZE))
+        self.font_selector.blockSignals(True)
+        self.font_selector.setCurrentText(name)
+        self.font_selector.blockSignals(False)
+
+    def _build_font_selector(self) -> QHBoxLayout:
+        """TEMPORARY: a dropdown to compare the candidate interface fonts live."""
+        self.font_selector = QComboBox()
+        self.font_selector.addItems(list(ui_fonts.CANDIDATES))
+        self.font_selector.setToolTip("Temporary: compare candidate interface fonts")
+        self.font_selector.currentTextChanged.connect(self.set_ui_font)
+        row = QHBoxLayout()
+        row.addWidget(QLabel("Font:"))
+        row.addWidget(self.font_selector)
+        return row
 
     def _build_slider_row(self) -> QHBoxLayout:
         self.to_start = self._symbol_button(symbols.SKIP_TO_START, "Jump to start")

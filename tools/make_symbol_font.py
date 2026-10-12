@@ -5,7 +5,8 @@
 The source defaults to tools/fonts/NotoSansSymbols2-Regular.ttf (git-ignored; from
 https://github.com/google/fonts/tree/main/ofl/notosanssymbols2). Needs the `tools` extra
 (fontTools). The output is bundled with the PySide6 GUI (loaded by gui/symbols.py) together
-with the font's licence, gui/fonts/OFL.txt - copy NotoSansSymbols2-OFL.txt there if missing.
+with the font's licence, gui/fonts/NotoSansSymbols2-OFL.txt (copy it from tools/fonts/ if
+missing).
 
 Two changes from the original, both permitted by its SIL Open Font License (which declares no
 Reserved Font Name):

@@ -32,7 +32,12 @@ A completely new GUI is being built incrementally in **PySide6** (Qt 6, via the
   drawing, so any slider styling must go in SLIDER_STYLE.
 - Button symbols (⏮ U+23EE, ⏭ U+23ED, 22 pt) come from a bundled Noto Sans Symbols 2
   subset, loaded by `gui/symbols.py`. Buttons size themselves to the symbol. Rebuild the font
-  with `tools/make_symbol_font.py`; keep `OFL.txt` next to it.
+  with `tools/make_symbol_font.py`; keep `NotoSansSymbols2-OFL.txt` next to it.
+- Increment 2 (in progress): choosing the interface font. Candidates DejaVu Sans Mono and
+  Source Code Pro are bundled (Regular + Bold) in `gui/fonts/` and listed in
+  `gui/ui_fonts.py`. TEMPORARY comparison aids: a "Font:" dropdown at the window's top
+  left and `random-walk --font {system,dejavu,source}`. Once chosen, keep only that font
+  (and its licence), and remove the dropdown, the --font option and the other candidates.
 - The user evaluates each increment before logic or GUI tests are added. Ask clarifying
   questions before each increment; don't add pytest-qt tests until asked.
 - Plotting will probably use pyqtgraph (MIT); not added yet.
@@ -57,7 +62,8 @@ for features and behaviour; don't merge it back. The original single-file app al
     │       ├── app.py         # create_app() (light scheme), run()
     │       ├── main_window.py # MainWindow: layout from the sketches
     │       ├── symbols.py     # symbol_font(), SKIP_TO_START/SKIP_TO_END
-    │       └── fonts/         # bundled Noto Sans Symbols 2 subset + OFL.txt
+    │       ├── ui_fonts.py    # candidate interface fonts (temporary, for comparison)
+    │       └── fonts/         # bundled fonts, each with its licence file
     ├── tests/                 # core only: theory, simulation, params, playback
     ├── tools/                 # font scripts: explorer (dearpygui), symbol subset builder
     │   └── fonts/             # downloaded fonts, git-ignored
@@ -84,6 +90,15 @@ fonttools. Optional: mypy.
 When choosing GUI libraries, check licences against the MIT project licence. PySide6 is LGPLv3
 and fine as a dependency; avoid GPL-only Qt modules (Qt Charts, Qt Data Visualization,
 Qt Graphs). pyqtgraph is MIT. Bundled fonts need their licence file shipped alongside.
+
+Bundled fonts and their licences (all fine for an MIT project; none may be sold on its own):
+
+- Noto Sans Symbols 2 (subset): SIL OFL 1.1, no Reserved Font Name, so modifying it was OK.
+- DejaVu Sans Mono: Bitstream Vera licence + public domain changes (+ Arev glyphs).
+  Modified versions must be renamed (no "Bitstream"/"Vera"/"Arev" in the name). Bundle
+  unmodified.
+- Source Code Pro: SIL OFL 1.1 with Reserved Font Name "Source" (Adobe trademark).
+  Subsetting or other changes would require renaming it. Bundle unmodified.
 
 ## Physics (keep these exact)
 

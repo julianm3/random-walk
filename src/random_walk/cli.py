@@ -2,14 +2,31 @@
 
 from __future__ import annotations
 
+import argparse
 import sys
 
+# Kept in step with gui.ui_fonts.CLI_NAMES, without importing Qt just to parse arguments.
+FONT_CHOICES = ("system", "dejavu", "source")
 
-def main() -> int:
-    # Imported here so the core package can be used without loading Qt.
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(prog="random-walk", description="1D random walk explorer")
+    parser.add_argument(
+        "--font",
+        choices=FONT_CHOICES,
+        default="system",
+        help="interface font to start with (temporary, for comparing candidates)",
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(argv)
+    # Imported here so the core package (and --help) work without loading Qt.
+    from random_walk.gui import ui_fonts
     from random_walk.gui.app import run
 
-    return run()
+    return run(ui_fonts.CLI_NAMES[args.font])
 
 
 if __name__ == "__main__":

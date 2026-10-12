@@ -4,10 +4,14 @@ Exploration tool only - not part of the random_walk package. Needs the `tools` e
 `py -m pip install -e ".[tools]"` (dearpygui, fonttools). Note that Dear PyGui draws only
 the fonts it loads, with no fallback; Qt-style toolkits render differently.
 
-Fonts live in tools/fonts/ (git-ignored); every .ttf/.otf there appears in the Font list:
+Every .ttf/.otf in these folders appears in the Font list:
 
-  promptfont.ttf                PromptFont, https://github.com/Shinmera/promptfont/releases
-  NotoSansSymbols2-Regular.ttf  https://github.com/google/fonts/tree/main/ofl/notosanssymbols2
+  tools/fonts/ (git-ignored downloads for exploring)
+    promptfont.ttf                PromptFont, https://github.com/Shinmera/promptfont/releases
+    NotoSansSymbols2-Regular.ttf  https://github.com/google/fonts/tree/main/ofl/notosanssymbols2
+  src/random_walk/gui/fonts/ (fonts bundled with the app)
+    DejaVuSansMono*.ttf, SourceCodePro-*.ttf  candidate interface fonts
+    NotoSansSymbols2-Media.ttf                the app's button symbols
 
 If a font has a sidecar "<name>.glyphs.json" in PromptFont's format (from its release, renamed
 from glyphs.json), names, categories and tags come from that. Otherwise glyphs are read from
@@ -17,7 +21,8 @@ the Unicode database and grouped by 256-character block ("U+23xx").
     py tools/font_explorer.py
 
 Click a glyph for its details; "Copy" puts its Python escape (e.g. "\\u23ed") on the
-clipboard. The sample row shows the selected glyph on a button next to normal text buttons.
+clipboard. The sample row shows the selected glyph on a button next to normal text buttons,
+and the sample text shows the whole font at the chosen size - useful for text fonts.
 
 Known gap in PromptFont v1.10: glyphs.json lists "Sun" (U+2600), but the font has no such
 glyph, so it draws as "?". The font also has ~320 characters glyphs.json doesn't list (mostly
@@ -34,7 +39,9 @@ from typing import Any
 
 import dearpygui.dearpygui as dpg
 
-FONT_DIR = Path(__file__).parent / "fonts"
+ROOT = Path(__file__).resolve().parent.parent
+FONT_DIRS = [ROOT / "tools" / "fonts", ROOT / "src" / "random_walk" / "gui" / "fonts"]
+SAMPLE_TEXT = "Random Walk   1000 Steps, 10000 Times   0123456789   Il1| O0o {}[]() +-=*/"
 
 SIZES = [13, 16, 20, 24, 32, 48]  # px; 13 matches the app's default font
 DETAIL_SIZE = 96
@@ -44,7 +51,7 @@ SKIP_CATEGORIES = {"Cc", "Cf", "Zs", "Zl", "Zp"}  # controls and spaces: nothing
 
 Glyph = dict[str, Any]
 
-font_files: list[Path] = []
+font_files: dict[str, Path] = {}  # file name -> path, across FONT_DIRS
 current_file: Path | None = None
 fonts: dict[tuple[Path, int], int | str] = {}  # (file, size) -> loaded font
 glyph_cache: dict[Path, list[Glyph]] = {}
@@ -189,6 +196,11 @@ def show_details() -> None:
     dpg.bind_item_font("sample_glyph", font(current_size()))
 
 
+def show_sample_text() -> None:
+    dpg.set_value("sample_text", SAMPLE_TEXT)
+    dpg.bind_item_font("sample_text", font(current_size()))
+
+
 def select_font(font_file: Path) -> None:
     global current_file, glyphs, selected
     current_file = font_file
@@ -202,13 +214,14 @@ def select_font(font_file: Path) -> None:
     dpg.set_viewport_title(f"Font explorer - {font_file.name}")
     rebuild_grid()
     show_details()
+    show_sample_text()
 
 
 # --- callbacks ---------------------------------------------------------------------------
 
 
 def on_font_changed(sender: Any, app_data: str, user_data: Any) -> None:
-    select_font(FONT_DIR / app_data)
+    select_font(font_files[app_data])
 
 
 def on_select(sender: Any, app_data: Any, user_data: Glyph) -> None:
@@ -220,6 +233,7 @@ def on_select(sender: Any, app_data: Any, user_data: Glyph) -> None:
 def on_size_changed() -> None:
     rebuild_grid()
     show_details()
+    show_sample_text()
 
 
 def on_copy() -> None:
@@ -230,9 +244,15 @@ def on_copy() -> None:
 # --- assembly ----------------------------------------------------------------------------
 
 
+def find_fonts() -> dict[str, Path]:
+    found = [p for d in FONT_DIRS for p in d.glob("*") if p.suffix.lower() in (".ttf", ".otf")]
+    return {p.name: p for p in sorted(found, key=lambda p: p.name.lower())}
+
+
 def build_ui() -> None:
     """Create the context, viewport and widgets (no render loop)."""
-    font_files[:] = sorted(p for p in FONT_DIR.glob("*") if p.suffix.lower() in (".ttf", ".otf"))
+    font_files.clear()
+    font_files.update(find_fonts())
     dpg.create_context()
     dpg.add_font_registry(tag="font_registry")
     dpg.create_viewport(title="Font explorer", width=1150, height=850)
@@ -241,7 +261,7 @@ def build_ui() -> None:
         with dpg.group(horizontal=True):
             dpg.add_text("Font")
             dpg.add_combo(
-                [p.name for p in font_files],
+                list(font_files),
                 tag="font_combo",
                 width=230,
                 callback=on_font_changed,
@@ -282,20 +302,22 @@ def build_ui() -> None:
                     dpg.add_button(label="Step Fwd")
                     dpg.add_button(label="", tag="sample_glyph")
                     dpg.add_text("  speed")
+        dpg.add_text("Sample text (selected font at chosen size):")
+        dpg.add_text("", tag="sample_text")
         dpg.add_separator()
 
         with dpg.child_window(tag="grid_holder", border=False):
             pass
 
-    select_font(font_files[0])
+    select_font(next(iter(font_files.values())))
     dpg.set_primary_window("primary", True)
     dpg.setup_dearpygui()
     dpg.show_viewport()
 
 
 def main() -> None:
-    if not any(p.suffix.lower() in (".ttf", ".otf") for p in FONT_DIR.glob("*")):
-        sys.exit(f"No .ttf/.otf fonts in {FONT_DIR} - see this script's docstring.")
+    if not find_fonts():
+        sys.exit("No .ttf/.otf fonts found - see this script's docstring.")
     build_ui()
     dpg.start_dearpygui()
     dpg.destroy_context()

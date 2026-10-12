@@ -1,9 +1,10 @@
 """Media-control symbols for buttons, drawn with a bundled font.
 
-The font is a subset of Noto Sans Symbols 2 (SIL OFL 1.1, licence in gui/fonts/OFL.txt) holding
-just the transport symbols U+23E9-U+23FA, with its line height tightened around them so they
-centre well in buttons. It's built by tools/make_symbol_font.py. Bundling it keeps the symbols
-identical on every platform rather than depending on whichever system font Qt falls back to.
+The font is a subset of Noto Sans Symbols 2 (SIL OFL 1.1, licence in
+gui/fonts/NotoSansSymbols2-OFL.txt) holding just the transport symbols U+23E9-U+23FA, with its
+line height tightened around them so they centre well in buttons. It's built by
+tools/make_symbol_font.py. Bundling it keeps the symbols identical on every platform rather
+than depending on whichever system font Qt falls back to.
 """
 
 from __future__ import annotations
