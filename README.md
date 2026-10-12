@@ -4,9 +4,9 @@ An interactive explorer for 1D random walks. Each walk takes STEPS jumps of +1 o
 optional slope bias and an optional reflecting wall. The app runs thousands of walks and shows
 the results as a histogram and as several animations.
 
-> **The GUI is being rebuilt.** This branch (`main`) currently contains the simulation core
-> and its tests, but no user interface; `random-walk` prints a notice. The previous
-> Dear PyGui interface is on the [`ui_prototype`](https://github.com/julianm3/random-walk/tree/ui_prototype) branch
+> **The GUI is being rebuilt** in PySide6 (Qt), one step at a time. On this branch (`main`),
+> `random-walk` opens an early version: the window layout, with nothing connected to the
+> simulation yet. The previous Dear PyGui interface is on the [`ui_prototype`](https://github.com/julianm3/random-walk/tree/ui_prototype) branch
 > (tag `dpg-final`):
 >
 > ```powershell
@@ -33,6 +33,7 @@ You need Python 3.11 or newer. On Windows:
 py -m venv .venv
 .venv\Scripts\activate
 py -m pip install -e ".[dev]"
+random-walk            # or: py -m random_walk
 ```
 
 ## Development
@@ -55,9 +56,10 @@ src/random_walk/
     theory.py        slope formula, normal and half-normal curves
     playback.py      timeline playback state (no GUI imports)
     cli.py           command-line entry point
+    gui/             PySide6 (Qt) interface, in progress
 tests/               unit tests for the core
 tools/               font exploration scripts (pip install -e ".[tools]")
-docs/                theory and design notes
+docs/                theory and design notes; sketches/ holds the GUI sketches
 legacy/              the original single-file app, kept for reference
 ```
 

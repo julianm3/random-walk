@@ -10,16 +10,19 @@ How the code is organised and why.
     simulation.py  simulate / simulate_paths / summarize    |  fully unit-tested
     playback.py    Playback timeline state machine         /
     cli.py         entry point
-    gui/           the GUI (being rebuilt; not on main yet)
+    gui/           PySide6 (Qt) GUI, being rebuilt; the only package that imports Qt
 
-The rule: GUI toolkit code lives only in `gui/`. Anything with logic worth testing
+The rule: Qt code lives only in `gui/`. Anything with logic worth testing
 (validation, physics, histogram summaries, playback timing) lives in the core, where its
 tests need no display. That split is what lets the GUI be replaced without touching the core.
 
 ## The GUI: being rebuilt
 
-`main` has no GUI while a new one is built incrementally. Until then, `cli.main()` prints a
-notice; the new GUI's launcher goes there.
+A new GUI is being built incrementally in PySide6, light theme, from the user's sketches.
+`cli.main()` imports it lazily (so the core never loads Qt) and runs `gui.app.run()`, which
+creates the `QApplication` and shows `gui.main_window.MainWindow`. So far the window has the
+first sketch's layout only: title, an empty drawing area that takes all spare space, a summary
+label, and a fixed-width slider row kept centred by stretches on both sides.
 
 The previous Dear PyGui GUI is on the `ui_prototype` branch (tag `dpg-final`). It had a Static
 tab (one histogram, no timeline) and an Animation tab whose four modes shared one plot and one

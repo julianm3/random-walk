@@ -4,19 +4,17 @@
 
 The source defaults to tools/fonts/NotoSansSymbols2-Regular.ttf (git-ignored; from
 https://github.com/google/fonts/tree/main/ofl/notosanssymbols2). Needs the `tools` extra
-(fontTools). Written for the Dear PyGui GUI (now on the ui_prototype branch); the new GUI may
-not need it, since Qt-style toolkits fall back to system fonts for missing characters. If the
-output is bundled, ship the font's OFL.txt alongside it.
+(fontTools). The output is bundled with the PySide6 GUI (loaded by gui/symbols.py) together
+with the font's licence, gui/fonts/OFL.txt - copy NotoSansSymbols2-OFL.txt there if missing.
 
 Two changes from the original, both permitted by its SIL Open Font License (which declares no
 Reserved Font Name):
 
-1. Subset to the transport symbols only (U+23E9-U+23EF, U+23F4-U+23FA), about 8 KB.
+1. Subset to the transport symbols only (U+23E9-U+23EF, U+23F4-U+23FA), about 6 KB.
 2. Tighten the vertical metrics to a band around those symbols. The original line (-630 to
-   1069 units) is ~3x taller than the symbols (70 to 606), so Dear PyGui either drew them
-   tiny or, at a larger size, too tall for a normal button. Dear ImGui sizes a font by its
-   line height and centres a button's line vertically, so with the line hugging the symbols,
-   a 13 px font gives 13 px symbols, centred, in a normal-height button.
+   1069 units) is ~3x taller than the symbols (70 to 606), so toolkits that centre a text
+   line in a button (Dear ImGui did; Qt does too) place the symbols off-centre or need an
+   oversized button. With the line hugging the symbols, they centre in a normal button.
 """
 
 from __future__ import annotations

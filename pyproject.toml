@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "random-walk"
-version = "0.1.0"
+version = "0.2.0"
 description = "Interactive 1D random walk explorer with histograms and animations"
 readme = "README.md"
 license = "MIT"
@@ -12,6 +12,7 @@ license-files = ["LICENSE"]
 requires-python = ">=3.11"
 dependencies = [
     "numpy>=2.0",
+    "PySide6-Essentials>=6.8",
 ]
 
 [project.optional-dependencies]

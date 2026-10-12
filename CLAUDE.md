@@ -16,10 +16,26 @@ suggest commands, don't commit or push.
 
 ## GUI status: being rebuilt
 
-`main` currently has **no GUI**. A completely new GUI is being built incrementally;
-the toolkit is still to be chosen (PySide6 + pyqtgraph has been discussed). Until it exists,
-`random-walk` / `py -m random_walk` run `random_walk.cli.main()`, which prints a placeholder.
-Wire the new GUI's launcher into `cli.main()`.
+A completely new GUI is being built incrementally in **PySide6** (Qt 6, via the
+`PySide6-Essentials` package), light theme only, following the user's sketches, kept in
+`docs/sketches/GUI_<n>.pdf` (black = layout, blue boxes = the user's notes). `random-walk` /
+`py -m random_walk` run `random_walk.cli.main()`, which opens it.
+
+- Increment 1 (GUI_1, released as v0.2.0): window titled "Random Walk", title label top right,
+  an empty drawing area that grows with the window, a plain-text summary box ("1000 Steps,
+  10000 Times") under it on the right, and a fixed-size (640x24 px) slider 0-1000 centred
+  below, with left/right buttons that jump it to its limits. Nothing is connected to the
+  simulation yet.
+- Slider look (user's choices): style sheet with a black track left of the handle, light grey
+  (#d3d3d3) right of it, and a thin black bar handle (4x22 px, the "playhead" look). The
+  handle is clipped to the widget, hence SLIDER_HEIGHT = 24. A style sheet replaces native
+  drawing, so any slider styling must go in SLIDER_STYLE.
+- Button symbols (⏮ U+23EE, ⏭ U+23ED, 22 pt) come from a bundled Noto Sans Symbols 2
+  subset, loaded by `gui/symbols.py`. Buttons size themselves to the symbol. Rebuild the font
+  with `tools/make_symbol_font.py`; keep `OFL.txt` next to it.
+- The user evaluates each increment before logic or GUI tests are added. Ask clarifying
+  questions before each increment; don't add pytest-qt tests until asked.
+- Plotting will probably use pyqtgraph (MIT); not added yet.
 
 The previous Dear PyGui GUI is preserved on the **`ui_prototype`** branch (tag `dpg-final`),
 with its own CLAUDE.md covering Dear PyGui quirks and headless testing. Use it as a reference
@@ -36,11 +52,16 @@ for features and behaviour; don't merge it back. The original single-file app al
     │   ├── theory.py          # p_right, final mean/sd, normal and half-normal curves
     │   ├── simulation.py      # simulate, simulate_paths, summarize, parity_bins (numpy only)
     │   ├── playback.py        # Playback timeline state machine (no GUI imports)
-    │   └── cli.py             # entry point (placeholder until the new GUI exists)
+    │   ├── cli.py             # entry point: imports the GUI lazily and runs it
+    │   └── gui/               # PySide6 GUI: the only package that imports Qt
+    │       ├── app.py         # create_app() (light scheme), run()
+    │       ├── main_window.py # MainWindow: layout from the sketches
+    │       ├── symbols.py     # symbol_font(), SKIP_TO_START/SKIP_TO_END
+    │       └── fonts/         # bundled Noto Sans Symbols 2 subset + OFL.txt
     ├── tests/                 # core only: theory, simulation, params, playback
-    ├── tools/                 # font exploration scripts (dearpygui + fonttools; not packaged)
+    ├── tools/                 # font scripts: explorer (dearpygui), symbol subset builder
     │   └── fonts/             # downloaded fonts, git-ignored
-    ├── docs/theory.md, docs/design-notes.md
+    ├── docs/theory.md, docs/design-notes.md, docs/sketches/ (GUI sketches)
     └── legacy/random-walk-vibe.py
 
 ## Commands
@@ -57,7 +78,8 @@ Code is formatted with `ruff format` (line length 100). Use type hints throughou
 
 ## Dependencies
 
-numpy (>=2.0). Dev: pytest, ruff. Tools extra: dearpygui, fonttools. Optional: mypy.
+numpy (>=2.0), PySide6-Essentials (>=6.8). Dev: pytest, ruff. Tools extra: dearpygui,
+fonttools. Optional: mypy.
 
 When choosing GUI libraries, check licences against the MIT project licence. PySide6 is LGPLv3
 and fine as a dependency; avoid GPL-only Qt modules (Qt Charts, Qt Data Visualization,
@@ -82,8 +104,8 @@ Qt Graphs). pyqtgraph is MIT. Bundled fonts need their licence file shipped alon
 
 ## Architecture rules
 
-- GUI toolkit code lives only in `gui/` (to be recreated). Nothing in the core imports a GUI
-  toolkit; logic worth testing belongs in the core, where tests need no display.
+- Qt code lives only in `gui/`. Nothing in the core imports Qt (`cli.py` imports the GUI
+  inside `main()`); logic worth testing belongs in the core, where tests need no display.
 - `simulate()`/`simulate_paths()` take an optional `rng: np.random.Generator`. Tests always
   pass a seeded one. The GUI uses the unseeded module default.
 - Validate the shared parameters with `params.validate()` and pass them around as a
@@ -95,15 +117,20 @@ Qt Graphs). pyqtgraph is MIT. Bundled fonts need their licence file shipped alon
 
 ## Testing rules
 
-- `tests/` covers the core only and needs no display. The GUI testing approach is to be chosen
-  with the new toolkit (for Qt, pytest-qt can run headless); there is no CI yet.
+- `tests/` covers the core only and needs no display. GUI tests (pytest-qt, headless) are
+  planned but on hold until the user asks; there is no CI yet.
+- To check the GUI visually without a window popping up, render it invisibly with the real
+  Windows platform: `widget.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen)`, `show()`,
+  process events, then `widget.grab().save(...)`. The `offscreen` platform has no fonts
+  (text renders as boxes) and reports no colour scheme.
 - Behaviour of the new GUI can be compared against `ui_prototype` or the legacy app by seeding
   the generator (`random_walk.simulation._default_rng = np.random.default_rng(seed)`).
 - mypy: don't pin `python_version` to 3.11. numpy 2.5's stubs don't resolve for that target.
 
 ## Open items
 
-- Build the new GUI (incrementally), then decide on GUI tests and CI (GitHub Actions).
+- Continue the new GUI from the user's sketches; then add pytest-qt tests and CI (GitHub
+  Actions) when the user asks.
 - Planned: a seed control in the UI.
 - Known physics issue (see docs/theory.md): the wall curve is a half-normal centred on the
   wall and ignores that the walk starts at 0; the folded normal phi(y) + phi(2w - y) is the

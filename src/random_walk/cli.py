@@ -4,20 +4,12 @@ from __future__ import annotations
 
 import sys
 
-PLACEHOLDER = """\
-random-walk: the GUI is being rebuilt.
-
-The simulation core (random_walk.simulation, .theory, .params, .playback) is available
-as a library. The previous Dear PyGui interface is on the ui_prototype branch
-(tag dpg-final):
-
-    git checkout ui_prototype
-"""
-
 
 def main() -> int:
-    print(PLACEHOLDER, end="")
-    return 0
+    # Imported here so the core package can be used without loading Qt.
+    from random_walk.gui.app import run
+
+    return run()
 
 
 if __name__ == "__main__":
