@@ -27,6 +27,9 @@ CANDIDATES: dict[str, tuple[str, ...]] = {
 # Short names for the --font command-line option.
 CLI_NAMES = {"system": SYSTEM, "dejavu": "DejaVu Sans Mono", "source": "Source Code Pro"}
 
+# The font the app starts in (user's current preference).
+DEFAULT = "Source Code Pro"
+
 _registered = False
 _system_font: QFont | None = None
 

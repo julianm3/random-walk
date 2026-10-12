@@ -14,7 +14,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--font",
         choices=FONT_CHOICES,
-        default="system",
+        default="source",
         help="interface font to start with (temporary, for comparing candidates)",
     )
     return parser.parse_args(argv)

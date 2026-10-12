@@ -13,8 +13,18 @@ from importlib.resources import files
 
 from PySide6.QtGui import QFont, QFontDatabase
 
+# Unicode gives some of these characters emoji presentation by default (U+23E9 and U+23EA
+# here), and the OS then draws them from its colour emoji font, ignoring ours. Appending the
+# text presentation selector U+FE0E asks for the plain text glyph instead.
+TEXT_PRESENTATION = chr(0xFE0E)  # VARIATION SELECTOR-15
+
 SKIP_TO_START = chr(0x23EE)  # BLACK LEFT-POINTING DOUBLE TRIANGLE WITH VERTICAL BAR
 SKIP_TO_END = chr(0x23ED)  # BLACK RIGHT-POINTING DOUBLE TRIANGLE WITH VERTICAL BAR
+FAST_REVERSE = chr(0x23EA) + TEXT_PRESENTATION  # BLACK LEFT-POINTING DOUBLE TRIANGLE
+FAST_FORWARD = chr(0x23E9) + TEXT_PRESENTATION  # BLACK RIGHT-POINTING DOUBLE TRIANGLE
+PLAY = chr(0x23F5)  # BLACK MEDIUM RIGHT-POINTING TRIANGLE
+PAUSE = chr(0x23F8)  # DOUBLE VERTICAL BAR
+PLAY_PAUSE = chr(0x23EF)  # BLACK RIGHT-POINTING TRIANGLE WITH DOUBLE VERTICAL BAR
 
 FONT_FILE = "NotoSansSymbols2-Media.ttf"
 POINT_SIZE = 22

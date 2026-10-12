@@ -36,8 +36,21 @@ A completely new GUI is being built incrementally in **PySide6** (Qt 6, via the
 - Increment 2 (in progress): choosing the interface font. Candidates DejaVu Sans Mono and
   Source Code Pro are bundled (Regular + Bold) in `gui/fonts/` and listed in
   `gui/ui_fonts.py`. TEMPORARY comparison aids: a "Font:" dropdown at the window's top
-  left and `random-walk --font {system,dejavu,source}`. Once chosen, keep only that font
+  left and `random-walk --font {system,dejavu,source}`. The app starts in Source Code Pro
+  (`ui_fonts.DEFAULT`, the user's current preference). Once chosen, keep only that font
   (and its licence), and remove the dropdown, the --font option and the other candidates.
+- Increment 3 (GUI_2): a second slider row (class `SliderRow`, an exact copy of the first) and
+  centred player controls ⏪ ⏵/⏸ ⏩ below. The bottom section has its own zero-spacing
+  layout so `SLIDER_GAP` (36) and `CONTROLS_GAP` (24) are the exact gaps; the window layout's
+  8 px spacing is otherwise added next to `addSpacing()` gaps. Play/Pause is a plain button
+  that swaps its symbol (a checkable button gets a blue highlight in the Windows 11 style),
+  fixed to the wider symbol's width. It shows the combined ⏯ (`COMBINED_PLAY_PAUSE`); its
+  symbol is grey (#8c8c8c) while paused, black on hover and while playing, via
+  `HoverColorButton` (palette swap on enter/leave, keeping the native look). Still no
+  simulation connections.
+- Emoji pitfall: U+23E9/U+23EA (and a few other symbols) have emoji presentation by default,
+  so Windows draws them as colour emoji regardless of the font set. Append U+FE0E
+  (`symbols.TEXT_PRESENTATION`) to force the plain glyph. Check any new symbol for this.
 - The user evaluates each increment before logic or GUI tests are added. Ask clarifying
   questions before each increment; don't add pytest-qt tests until asked.
 - Plotting will probably use pyqtgraph (MIT); not added yet.
