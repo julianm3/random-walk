@@ -41,13 +41,25 @@ A completely new GUI is being built incrementally in **PySide6** (Qt 6, via the
   (and its licence), and remove the dropdown, the --font option and the other candidates.
 - Increment 3 (GUI_2): a second slider row (class `SliderRow`, an exact copy of the first) and
   centred player controls ⏪ ⏵/⏸ ⏩ below. The bottom section has its own zero-spacing
-  layout so `SLIDER_GAP` (36) and `CONTROLS_GAP` (24) are the exact gaps; the window layout's
+  layout so the gap constants are the exact gaps; the window layout's
   8 px spacing is otherwise added next to `addSpacing()` gaps. Play/Pause is a plain button
   that swaps its symbol (a checkable button gets a blue highlight in the Windows 11 style),
   fixed to the wider symbol's width. It shows the combined ⏯ (`COMBINED_PLAY_PAUSE`); its
   symbol is grey (#8c8c8c) while paused, black on hover and while playing, via
   `HoverColorButton` (palette swap on enter/leave, keeping the native look). Still no
   simulation connections.
+- Increment 4 (sketch `customControl.pdf`): `gui/position_selector.py` - `PositionSelector`,
+  a custom-painted row of N circles (default 3) joined by a line; the selected one has a dot
+  half the diameter that slides between positions (QVariantAnimation, 180 ms). All black,
+  transparent circles, no hover effect. Select by clicking a circle or its label only (no
+  drag, no keyboard). Constructor parameters: labels, diameter, spacing (edge-to-edge,
+  a minimum: widened so the widest label fits, keeping all gaps equal), label_gap. Emits
+  `currentIndexChanged(int)`. In the window its labels are "Walk", "Trials", "Both"
+  (`SELECTOR_LABELS`). Placed between the summary box and the top slider.
+- Vertical spacing below the drawing area: summary box (8 px under it, via the window
+  layout), then summary, selector, two slider rows and player controls in one zero-spacing
+  layout with exact gaps, all `CONTROL_GAP` = 12 px except `SELECTOR_TOP_GAP` = 18 (no
+  internal padding there), giving visibly even gaps of about 18-22 px. Bottom margin 24 px.
 - Emoji pitfall: U+23E9/U+23EA (and a few other symbols) have emoji presentation by default,
   so Windows draws them as colour emoji regardless of the font set. Append U+FE0E
   (`symbols.TEXT_PRESENTATION`) to force the plain glyph. Check any new symbol for this.
@@ -76,6 +88,7 @@ for features and behaviour; don't merge it back. The original single-file app al
     │       ├── main_window.py # MainWindow: layout from the sketches
     │       ├── symbols.py     # symbol_font(), SKIP_TO_START/SKIP_TO_END
     │       ├── ui_fonts.py    # candidate interface fonts (temporary, for comparison)
+    │       ├── position_selector.py  # PositionSelector custom widget
     │       └── fonts/         # bundled fonts, each with its licence file
     ├── tests/                 # core only: theory, simulation, params, playback
     ├── tools/                 # font scripts: explorer (dearpygui), symbol subset builder

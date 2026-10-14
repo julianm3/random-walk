@@ -1,4 +1,4 @@
-"""The main window, laid out after the sketches in docs/sketches (GUI_1, GUI_2):
+"""The main window, laid out after the sketches in docs/sketches (GUI_1, GUI_2, customControl):
 
     +--------------------------------------------+
     | Font: [....]                   Random Walk |
@@ -7,7 +7,11 @@
     | |         drawing area (grows)           | |
     | |                                        | |
     | +----------------------------------------+ |
-    |                   [1000 Steps, 10000 Times]|
+    |                  [1000 Steps, 10000 Trials]|
+    |               SELECTOR_TOP_GAP             |
+    |            (*)-----( )-----( )             |
+    |            Walk   Trials   Both            |
+    |              SELECTOR_BOTTOM_GAP           |
     |       |<< ---|--------------------- >>|    |
     |                  SLIDER_GAP                |
     |       |<< ---|--------------------- >>|    |
@@ -40,21 +44,32 @@ from PySide6.QtWidgets import (
 )
 
 from random_walk.gui import symbols, ui_fonts
+from random_walk.gui.position_selector import PositionSelector
 
 TITLE = "Random Walk"
-SUMMARY = "1000 Steps, 10000 Times"  # plain text for now
+SUMMARY = "1000 Steps, 10000 Trials"  # plain text for now
 SLIDER_MIN, SLIDER_MAX = 0, 1000
 SLIDER_WIDTH = 640  # px; fixed, independent of the window width
 SLIDER_HEIGHT = 24  # px; room for the 22 px handle bar, which is clipped to the widget
-SLIDER_GAP = 36  # px; vertical space between the two slider rows
-CONTROLS_GAP = 24  # px; vertical space between the second slider row and the player controls
+# Vertical gaps below the drawing area, all exact (px). They share one value so the controls
+# are evenly spaced; each can still be tuned on its own. The summary box stays tied to the
+# drawing area by the window layout's 8 px spacing.
+CONTROL_GAP = 12
+# +6: the summary box and the circles have no internal padding (buttons and sliders do),
+# so this gap needs a little more to look the same as the others.
+SELECTOR_TOP_GAP = CONTROL_GAP + 6  # summary box -> position selector
+SELECTOR_BOTTOM_GAP = CONTROL_GAP  # position selector -> top slider row
+SLIDER_GAP = CONTROL_GAP  # between the two slider rows
+CONTROLS_GAP = CONTROL_GAP  # second slider row -> player controls
+SELECTOR_LABELS = ("Walk", "Trials", "Both")
 # Play/Pause button: True shows the combined symbol (one fixed glyph); False swaps between
 # separate Play and Pause symbols. The tooltip follows the state either way.
 COMBINED_PLAY_PAUSE = True
 PLAYING_COLOR = "black"  # Play/Pause symbol colour while playing
 PAUSED_COLOR = "#8c8c8c"  # ... and while paused (mid grey); it turns black on hover
 TITLE_POINT_SIZE = 14
-SUMMARY_POINT_SIZE = 11
+SUMMARY_POINT_SIZE = 8
+SELECTOR_POINT_SIZE = 8  # position selector labels
 INITIAL_SIZE = (1000, 760)
 
 # Slider track: the part left of the handle (already played) and the part right of it.
@@ -103,14 +118,17 @@ class MainWindow(QMainWindow):
         self.summary = QLabel(SUMMARY)
         self.summary.setFrameShape(QFrame.Shape.Box)
         self.summary.setMargin(6)  # padding inside the frame
-        layout.addWidget(self.summary, alignment=Qt.AlignmentFlag.AlignRight)
-
-        layout.addSpacing(50)
-        # The bottom controls get their own zero-spacing layout, so SLIDER_GAP and CONTROLS_GAP
-        # are the exact gaps (the window layout would add its 8 px spacing on top).
+        self.position_selector = PositionSelector(SELECTOR_LABELS)
         self.slider_rows = (SliderRow(), SliderRow())
+
+        # Everything below the drawing area goes in its own zero-spacing layout, so the gap
+        # constants are the exact gaps (the window layout would add its 8 px spacing on top).
         controls = QVBoxLayout()
         controls.setSpacing(0)
+        controls.addWidget(self.summary, alignment=Qt.AlignmentFlag.AlignRight)
+        controls.addSpacing(SELECTOR_TOP_GAP)
+        controls.addWidget(self.position_selector, alignment=Qt.AlignmentFlag.AlignHCenter)
+        controls.addSpacing(SELECTOR_BOTTOM_GAP)
         controls.addLayout(self.slider_rows[0].layout)
         controls.addSpacing(SLIDER_GAP)
         controls.addLayout(self.slider_rows[1].layout)
@@ -126,6 +144,7 @@ class MainWindow(QMainWindow):
         QApplication.setFont(ui_fonts.ui_font(name))  # every widget without its own font
         self.title.setFont(ui_fonts.ui_font(name, TITLE_POINT_SIZE))
         self.summary.setFont(ui_fonts.ui_font(name, SUMMARY_POINT_SIZE))
+        self.position_selector.setFont(ui_fonts.ui_font(name, SELECTOR_POINT_SIZE))
         self.font_selector.blockSignals(True)
         self.font_selector.setCurrentText(name)
         self.font_selector.blockSignals(False)
