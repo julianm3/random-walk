@@ -10,7 +10,7 @@ Every .ttf/.otf in these folders appears in the Font list:
     promptfont.ttf                PromptFont, https://github.com/Shinmera/promptfont/releases
     NotoSansSymbols2-Regular.ttf  https://github.com/google/fonts/tree/main/ofl/notosanssymbols2
   src/random_walk/gui/fonts/ (fonts bundled with the app)
-    DejaVuSansMono*.ttf, SourceCodePro-*.ttf  candidate interface fonts
+    SourceCodePro-*.ttf                       the app's interface font
     NotoSansSymbols2-Media.ttf                the app's button symbols
 
 If a font has a sidecar "<name>.glyphs.json" in PromptFont's format (from its release, renamed

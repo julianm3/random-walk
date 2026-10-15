@@ -7,7 +7,8 @@ the results as a histogram and as several animations.
 > **The GUI is being rebuilt** in PySide6 (Qt), one step at a time. On this branch (`main`),
 > `random-walk` opens an early version: it simulates a seeded data set (10,000 walks of
 > 1000 steps) and draws it - walks, histograms and a density view, picked from a temporary
-> Drawing menu. The controls below the drawing aren't connected yet. The previous Dear
+> Drawing menu. Play animates the walks step by step, and the Steps slider scrubs through
+> them; the other controls aren't connected yet. The previous Dear
 > PyGui interface is on the [`ui_prototype`](https://github.com/julianm3/random-walk/tree/ui_prototype) branch
 > (tag `dpg-final`):
 >

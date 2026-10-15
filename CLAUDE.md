@@ -26,19 +26,38 @@ A completely new GUI is being built incrementally in **PySide6** (Qt 6, via the
   10000 Times") under it on the right, and a fixed-size (640x24 px) slider 0-1000 centred
   below, with left/right buttons that jump it to its limits. Nothing is connected to the
   simulation yet.
-- Slider look (user's choices): style sheet with a black track left of the handle, light grey
-  (#d3d3d3) right of it, and a thin black bar handle (4x22 px, the "playhead" look). The
-  handle is clipped to the widget, hence SLIDER_HEIGHT = 24. A style sheet replaces native
-  drawing, so any slider styling must go in SLIDER_STYLE.
+- Slider look (user's choices): style sheet with a 1 px track (`SLIDER_TRACK_WIDTH`), black
+  left of the handle, light grey (#d3d3d3) right of it, and a thin black bar handle (4 px wide,
+  23 px tall = track + 2 x `SLIDER_HANDLE_OVERHANG`, the "playhead" look). The handle is
+  clipped to the widget, hence SLIDER_HEIGHT = 24. A style sheet replaces native drawing, so
+  any slider styling must go in SLIDER_STYLE.
+- Animation (Play/Pause): `MainWindow.play()/pause()` drive the core `Playback` (1001 frames,
+  "real time" 30 steps/s, ~33 s) from a `QTimer` (`TICK_MS` 15) that runs only while playing.
+  Each frame shows `ANIMATION_DRAWING` (Overlay 4) with `at_step` = the current step. The
+  position and step axes stay still; the probability axis top follows the theory peak
+  continuously (`Drawing.probability_from_theory`: top = peak x (1 + `THEORY_HEADROOM` 0.18),
+  not rounded; ticks are the round values below it), so the bell keeps a constant height
+  (peak at 85% of the axis) and the tick labels slide instead. Tried and rejected: sizing from
+  the tallest bar (flickered as bar noise crossed tick boundaries) and rounding the theory-
+  based top to a tick (bars popped by ~15% at each of 23 changes). 0.18 is the smallest
+  headroom with no clipped bar (worst: 17% above the curve, step 975). The first frame is drawn
+  before the clock starts (it counts the density grid) so no steps are skipped. The Steps
+  slider (0-1000) follows the animation (updated with signals blocked) and moving it, or its
+  jump buttons, pauses and shows that step; choosing a drawing pauses too. Trials slider:
+  0-10,000, starts at 10,000, not connected. Fast reverse/forward not connected. Density
+  images are cached for the last `DENSITY_CACHE_SIZE` (4) steps only.
+- Slider labels: "Steps" (top row) and "Trials" (bottom), `SLIDER_LABELS`, 8 pt, right-aligned
+  left of each row's first button. `SliderRow` mirrors the label with an equal invisible
+  spacer on the right so the centred sliders don't move; both labels share the widest's
+  width so the rows align. This raised the minimum window width from 796 to 892 px.
 - Button symbols (⏮ U+23EE, ⏭ U+23ED, 22 pt) come from a bundled Noto Sans Symbols 2
   subset, loaded by `gui/symbols.py`. Buttons size themselves to the symbol. Rebuild the font
   with `tools/make_symbol_font.py`; keep `NotoSansSymbols2-OFL.txt` next to it.
-- Increment 2 (in progress): choosing the interface font. Candidates DejaVu Sans Mono and
-  Source Code Pro are bundled (Regular + Bold) in `gui/fonts/` and listed in
-  `gui/ui_fonts.py`. TEMPORARY comparison aids: a "Font:" dropdown at the window's top
-  left and `random-walk --font {system,dejavu,source}`. The app starts in Source Code Pro
-  (`ui_fonts.DEFAULT`, the user's current preference). Once chosen, keep only that font
-  (and its licence), and remove the dropdown, the --font option and the other candidates.
+- Interface font: Source Code Pro (chosen after comparing it with DejaVu Sans Mono and the
+  system font), bundled Regular + Bold in `gui/fonts/`. `gui/ui_fonts.py` registers it;
+  `ui_fonts.ui_font(size)` gives it at a size and `MainWindow.apply_fonts()` applies it
+  everywhere (the symbol buttons keep Noto). The comparison dropdown, the `--font` option and
+  DejaVu Sans Mono were removed; the CLI now has just `--help` and `--version`.
 - Increment 3 (GUI_2): a second slider row (class `SliderRow`, an exact copy of the first) and
   centred player controls ⏪ ⏵/⏸ ⏩ below. The bottom section has its own zero-spacing
   layout so the gap constants are the exact gaps; the window layout's
@@ -74,14 +93,14 @@ A completely new GUI is being built incrementally in **PySide6** (Qt 6, via the
   values come from the core module `ticks.py` (`nice_ticks()`: steps of 1/2/5 x 10^n,
   tested in tests/test_ticks.py), thinned to keep x ticks >= `MIN_TICK_SPACING` (65 px;
   gives every 20 at the default size) and y ticks >= `MIN_Y_TICK_SPACING` (40 px) apart.
-- TEMPORARY drawing selector: a "Drawing:" dropdown beside the font selector switches what the
+- TEMPORARY drawing selector: a "Drawing:" dropdown at the window's top left switches what the
   drawing area shows. `DRAWINGS` in main_window.py maps entries to `walk_view.Drawing`s:
   "Draw 1" (default) and "Draw 5" (first N walks), "Full Histogram", "Overlay 1" (histogram
   behind the first walk, both side axes shown), "Overlay 2" (the first 200 walks over a
   histogram of just those walks' final positions, shares in multiples of 0.005), "Overlay 3"
   (density image of all 10,000 walks with the full histogram), "Overlay 4" (Overlay 3 at
-  step 500 - `at_step=DEFAULT_STEPS // 2`: density only up to step 500, histogram of the
-  positions there, same step and x axes; the probability axis fits that histogram, 0-0.04).
+  step 50 - `at_step=50`: density only up to step 50, histogram of the positions there,
+  same step and x axes; the probability axis fits that histogram, 0-0.12).
   In Overlays 2-4 the bars are light
   grey at `OVERLAY_BAR_OPACITY` (0.6) in front, so the walks or density show through. Overlay
   2's walks are all Overlay 3's density grey (#404040) at `OVERLAY_WALK_OPACITY` (0.25), so
@@ -92,11 +111,16 @@ A completely new GUI is being built incrementally in **PySide6** (Qt 6, via the
   set as it stood at that step; default the last) and
   `histogram_in_front` (default behind); the axes
   are always painted last. `MainWindow.set_drawing()`
-  applies one. Remove it, like the font selector, once the drawing choices are settled.
+  applies one. Remove it once the drawing choices are settled.
 - Full Histogram: final positions of all trials in width-2 parity bins (`parity_bins`,
   `fractions_at`), light grey bars (#d3d3d3, 1 px gaps) whose heights are each bin's share of
   the trials (sum 1). The left step axis is hidden; a probability axis on the right runs from
-  0 to the first round value above the tallest bar. Room for both side axes is always
+  0 to the first round value above the tallest bar (or the theory curve's peak). Full
+  Histogram, Overlay 3 and Overlay 4 also show the theory curve (`Drawing.theory`, for the
+  shown step - so Overlay 4's is the step-50 curve): a 1 px light red (#F08080) line,
+  the normal density (mean -n sin(theta), sd sqrt(n)|cos(theta)|, from theory.py) times the
+  bin width 2, so it matches the bars' per-bin probabilities; `set_paths()` takes the
+  simulation's theta for it. Room for both side axes is always
   reserved (the right side: the wider of the full histogram's labels and the current
   drawing's), so the plot (and every x position) is identical in every drawing.
 - Density image (Overlay 3): `simulation.density_grid()` counts walks per (step, 2-wide
@@ -138,7 +162,7 @@ for features and behaviour; don't merge it back. The original single-file app al
     │       ├── app.py         # create_app() (light scheme), run()
     │       ├── main_window.py # MainWindow: layout from the sketches
     │       ├── symbols.py     # symbol_font(), SKIP_TO_START/SKIP_TO_END
-    │       ├── ui_fonts.py    # candidate interface fonts (temporary, for comparison)
+    │       ├── ui_fonts.py    # the interface font (Source Code Pro)
     │       ├── position_selector.py  # PositionSelector custom widget
     │       ├── walk_view.py   # WalkView: the drawing area, plots walks
     │       └── fonts/         # bundled fonts, each with its licence file
@@ -172,9 +196,6 @@ Qt Graphs). pyqtgraph is MIT. Bundled fonts need their licence file shipped alon
 Bundled fonts and their licences (all fine for an MIT project; none may be sold on its own):
 
 - Noto Sans Symbols 2 (subset): SIL OFL 1.1, no Reserved Font Name, so modifying it was OK.
-- DejaVu Sans Mono: Bitstream Vera licence + public domain changes (+ Arev glyphs).
-  Modified versions must be renamed (no "Bitstream"/"Vera"/"Arev" in the name). Bundle
-  unmodified.
 - Source Code Pro: SIL OFL 1.1 with Reserved Font Name "Source" (Adobe trademark).
   Subsetting or other changes would require renaming it. Bundle unmodified.
 

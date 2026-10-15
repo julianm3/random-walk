@@ -42,6 +42,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import QFrame, QWidget
 
+from random_walk import theory
 from random_walk.simulation import density_grid, fractions_at, normalize_rows, parity_bins
 from random_walk.ticks import nice_step, nice_ticks, tick_label
 
@@ -55,7 +56,15 @@ BAR_COLOR = "#d3d3d3"  # light grey histogram bars
 # stopping short of black so black histogram bars stay distinct in front of it.
 DENSITY_DARKEST = "#404040"
 DENSITY_BIN_WIDTH = 2  # positions per density column (one even, one odd)
+DENSITY_CACHE_SIZE = 4  # density images kept (one per shown step); animation makes many
 BAR_GAP = 1.0  # px between neighbouring bars, so they stay distinct
+THEORY_COLOR = "#F08080"  # light red (light coral) theory curve
+THEORY_WIDTH = 1.0  # px
+THEORY_SAMPLES = 400  # points along the curve
+# Room above the theory peak when the probability axis follows it: bars scatter around the
+# curve (up to 17% above it in the default data, at step 975), so this keeps them under
+# the top. The peak then sits at a steady 1 / 1.18 = 85% of the axis height.
+THEORY_HEADROOM = 0.18
 AXIS_COLOR = "black"
 AXIS_WIDTH = 1.0  # px; axis lines and ticks
 TICK_LENGTH = 5  # px; ticks point outwards from the plot
@@ -86,6 +95,14 @@ class Drawing:
     # Show the data set as it stood at this step (None: the last). Walks and the density stop
     # there and the histogram counts positions at it; the axes don't change.
     at_step: int | None = None
+    # Overlay the theoretical distribution of positions (no wall): a normal curve scaled to
+    # the histogram's width-2 bins, on the probability axis.
+    theory: bool = False
+    # Make the probability axis follow the theory curve's peak continuously: its top is the peak
+    # plus THEORY_HEADROOM, recomputed every frame and not rounded, with ticks at the round
+    # values below it. While animating, the histogram then keeps a steady height and the tick
+    # labels slide instead - nothing jumps (rounded tops made the bars pop at each change).
+    probability_from_theory: bool = False
 
 
 def x_to_screen(
@@ -153,6 +170,7 @@ class WalkView(QFrame):
         self._paths: NDArray[np.int64] | None = None
         self._x_range = (0, 0)
         self._steps = 0
+        self._theta = 0.0
         self._drawing = Drawing(walks=1)
         # Final-position histogram of every trial: bin centres and each bin's share.
         self._bins: NDArray[Any] = np.zeros(0)
@@ -160,11 +178,12 @@ class WalkView(QFrame):
         self._density_shade: NDArray[np.float64] | None = None  # built on first use
         self._density_images: dict[int, QImage] = {}  # by last step shown
 
-    def set_paths(self, paths: NDArray[np.int64]) -> None:
+    def set_paths(self, paths: NDArray[np.int64], theta: float = 0.0) -> None:
         """The data set to draw: shape (trials, steps + 1), as from simulate_paths()."""
         self._paths = paths
         self._x_range = (int(paths.min()), int(paths.max()))
         self._steps = paths.shape[1] - 1
+        self._theta = theta  # slope the walks were simulated with, for the theory curve
         finals = paths[:, -1]
         self._bins, self._fractions = fractions_at(finals, parity_bins(finals))
         self._density_shade = None
@@ -224,12 +243,45 @@ class WalkView(QFrame):
     def _step_tick_values(self) -> list[float]:
         return nice_ticks(0, self._steps, self._max_y_ticks(), min_step=1)
 
-    def _probability_tick_values(self, full: bool = False) -> list[float]:
-        """Ticks for the current drawing's histogram, or with `full` for every trial's."""
+    def _probability_axis(self, full: bool = False) -> tuple[list[float], float]:
+        """The probability axis for the current drawing's histogram (or with `full`, every
+        trial's): its ticks and its top value. The top is usually the last tick; when following
+        the theory peak it's the peak plus headroom, with the ticks the round values below."""
         fractions = self._fractions if full else self.histogram()[1]
         if len(fractions) == 0:
-            return []
-        return probability_ticks(float(fractions.max()), self._max_y_ticks())
+            return [], 1.0
+        if not full and self._drawing.probability_from_theory:
+            curve = self.theory_curve()
+            if curve is not None:  # (none at step 0 or theta = +/-90: fall back to the bars)
+                top = float(curve[1].max()) * (1 + THEORY_HEADROOM)
+                return nice_ticks(0, top, self._max_y_ticks()), top
+        highest = float(fractions.max())
+        if not full and self._drawing.theory:  # keep the curve's peak under the top tick too
+            curve = self.theory_curve()
+            if curve is not None:
+                highest = max(highest, float(curve[1].max()))
+        ticks = probability_ticks(highest, self._max_y_ticks())
+        return ticks, ticks[-1]
+
+    def _probability_tick_values(self, full: bool = False) -> list[float]:
+        return self._probability_axis(full)[0]
+
+    def probability_top(self) -> float:
+        """The value at the top of the probability axis (bars and curve are scaled to it)."""
+        return self._probability_axis()[1]
+
+    def theory_curve(self) -> tuple[NDArray[np.float64], NDArray[np.float64]] | None:
+        """The theoretical chance of a walk ending in each width-2 bin, at the shown step: the
+        normal density (mean -n sin(theta), sd sqrt(n) |cos(theta)|) times the bin width, as
+        (positions, probabilities) across the x range. None when the sd is 0 (theta = +/-90)."""
+        n = self.shown_step()
+        sd = theory.final_sd(n, self._theta)
+        if sd == 0:
+            return None
+        lo, hi = self._x_range
+        xs = np.linspace(lo, hi, THEORY_SAMPLES)
+        bin_width = 2  # the histogram's bins; positions share one parity, so one per bin
+        return xs, theory.normal_pdf(xs, theory.final_mean(n, self._theta), sd) * bin_width
 
     def y_ticks(self) -> list[float]:
         """Steps that get a tick on the left axis (only when walks are drawn)."""
@@ -290,6 +342,8 @@ class WalkView(QFrame):
             self._paint_walks(painter)
         if d.histogram and d.histogram_in_front:
             self._paint_histogram(painter)
+        if d.histogram and d.theory:
+            self._paint_theory(painter)
         if self._drawing.histogram:
             self._paint_probability_axis(painter)
         if self._shows_steps():
@@ -300,7 +354,7 @@ class WalkView(QFrame):
         """Every walk's position at every step as a greyscale image: one row per step (step 0
         at the bottom), one column per DENSITY_BIN_WIDTH positions, each row shaded relative
         to its own busiest cell; rows above the shown step are left empty. Counted once per
-        data set (~0.1 s for 10,000 walks); each shown step's image is cached."""
+        data set (~0.1 s for 10,000 walks); the last few shown steps' images are cached."""
         last = self.shown_step()
         if last not in self._density_images:
             assert self._paths is not None
@@ -317,6 +371,8 @@ class WalkView(QFrame):
             pixels = np.ascontiguousarray(grey[::-1])  # image rows run top-down
             height, width = pixels.shape
             image = QImage(pixels.data, width, height, width, QImage.Format.Format_Grayscale8)
+            if len(self._density_images) >= DENSITY_CACHE_SIZE:  # drop the oldest
+                del self._density_images[next(iter(self._density_images))]
             self._density_images[last] = image.copy()  # own the pixels; `pixels` is temporary
         return self._density_images[last]
 
@@ -337,6 +393,20 @@ class WalkView(QFrame):
         painter.drawImage(target, image)  # nearest-neighbour scaling keeps the bins crisp
         painter.restore()
 
+    def _paint_theory(self, painter: QPainter) -> None:
+        curve, ticks = self.theory_curve(), self.probability_ticks()
+        if curve is None or not ticks:
+            return
+        area = self.walk_area()
+        positions, chances = curve
+        xs = x_to_screen(positions, self._x_range, area)
+        ys = area.bottom() - chances / self.probability_top() * area.height()
+        painter.save()
+        painter.setClipRect(area)  # nothing spills above the plot, whatever the axis
+        painter.setPen(QPen(QColor(THEORY_COLOR), THEORY_WIDTH))
+        painter.drawPolyline(polygon_from_arrays(xs, ys))
+        painter.restore()
+
     def _paint_walks(self, painter: QPainter) -> None:
         assert self._paths is not None
         area = self.walk_area()
@@ -354,7 +424,9 @@ class WalkView(QFrame):
         ticks = self.probability_ticks()
         if not ticks:
             return
-        area, top = self.walk_area(), ticks[-1]
+        area, top = self.walk_area(), self.probability_top()
+        painter.save()
+        painter.setClipRect(area)  # nothing spills above the plot, whatever the axis
         painter.setPen(Qt.PenStyle.NoPen)
         color = QColor(self._drawing.histogram_color)
         color.setAlphaF(self._drawing.histogram_opacity)
@@ -370,6 +442,7 @@ class WalkView(QFrame):
             painter.drawRect(
                 QRectF(float(left) + BAR_GAP / 2, area.bottom() - height, width, height)
             )
+        painter.restore()
 
     def _paint_x_axis(self, painter: QPainter) -> None:
         area, inner = self.walk_area(), self._inner()
@@ -394,10 +467,10 @@ class WalkView(QFrame):
         self._paint_y_axis(painter, self.y_ticks(), max(self._steps, 1), right_side=False)
 
     def _paint_probability_axis(self, painter: QPainter) -> None:
-        """Right axis for the histogram: 0 at the bottom up to the top tick."""
+        """Right axis for the histogram: 0 at the bottom up to the axis top."""
         ticks = self.probability_ticks()
         if ticks:
-            self._paint_y_axis(painter, ticks, ticks[-1], right_side=True)
+            self._paint_y_axis(painter, ticks, self.probability_top(), right_side=True)
 
     def _paint_y_axis(
         self, painter: QPainter, ticks: list[float], top_value: float, right_side: bool

@@ -7,7 +7,6 @@ import sys
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication
 
-from random_walk.gui import ui_fonts
 from random_walk.gui.main_window import MainWindow
 
 
@@ -19,10 +18,9 @@ def create_app(argv: list[str] | None = None) -> QApplication:
     return app
 
 
-def run(ui_font: str = ui_fonts.DEFAULT) -> int:
-    """Open the main window, with interface font `ui_font` (a ui_fonts.CANDIDATES name), and
-    run the event loop until it closes."""
+def run() -> int:
+    """Open the main window and run the event loop until it closes."""
     app = create_app(sys.argv[:1])  # our own options are parsed in cli.py, not by Qt
-    window = MainWindow(ui_font)
+    window = MainWindow()
     window.show()
     return app.exec()
