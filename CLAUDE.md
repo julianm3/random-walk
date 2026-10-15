@@ -60,6 +60,56 @@ A completely new GUI is being built incrementally in **PySide6** (Qt 6, via the
   layout), then summary, selector, two slider rows and player controls in one zero-spacing
   layout with exact gaps, all `CONTROL_GAP` = 12 px except `SELECTOR_TOP_GAP` = 18 (no
   internal padding there), giving visibly even gaps of about 18-22 px. Bottom margin 24 px.
+- Increment 5: data and drawing. At startup `MainWindow.generate_data()` simulates the default
+  set (10,000 trials x 1000 steps, no wall) with the seeded default generator. `gui/walk_view.py`
+  (`WalkView`, a QFrame replacing the empty drawing area) draws the first N trials
+  (`set_walk_count()`; default 1), each in its own colour (`WALK_COLORS`: black, then the colour-blind-safe Okabe-Ito
+  palette; trial 1 drawn last so it's on top), bottom (step 0) to top
+  (last step). x spans the whole set's min..max position over all trials and steps (wider
+  than the final positions' range); both axes stretch to the plot area, rescaling on resize.
+  `walk_points()` does the scaling.
+- Axes (black, 1 px, labels 8 pt via `AXIS_POINT_SIZE`): x along the bottom of the walk area
+  (position; step 0 sits on it), ticks down; y up the left side (step 0 to the last step),
+  ticks left, labels right-aligned. The walk area shrinks to fit both axes' labels. Tick
+  values come from the core module `ticks.py` (`nice_ticks()`: steps of 1/2/5 x 10^n,
+  tested in tests/test_ticks.py), thinned to keep x ticks >= `MIN_TICK_SPACING` (65 px;
+  gives every 20 at the default size) and y ticks >= `MIN_Y_TICK_SPACING` (40 px) apart.
+- TEMPORARY drawing selector: a "Drawing:" dropdown beside the font selector switches what the
+  drawing area shows. `DRAWINGS` in main_window.py maps entries to `walk_view.Drawing`s:
+  "Draw 1" (default) and "Draw 5" (first N walks), "Full Histogram", "Overlay 1" (histogram
+  behind the first walk, both side axes shown), "Overlay 2" (the first 200 walks over a
+  histogram of just those walks' final positions, shares in multiples of 0.005), "Overlay 3"
+  (density image of all 10,000 walks with the full histogram), "Overlay 4" (Overlay 3 at
+  step 500 - `at_step=DEFAULT_STEPS // 2`: density only up to step 500, histogram of the
+  positions there, same step and x axes; the probability axis fits that histogram, 0-0.04).
+  In Overlays 2-4 the bars are light
+  grey at `OVERLAY_BAR_OPACITY` (0.6) in front, so the walks or density show through. Overlay
+  2's walks are all Overlay 3's density grey (#404040) at `OVERLAY_WALK_OPACITY` (0.25), so
+  overlaps build up darker like the density shading. A `Drawing` has independent `density`,
+  `walks` and `histogram` parts, plus `histogram_from_walks` (count only the drawn walks),
+  `histogram_color` (default light grey), `histogram_opacity` (default 1), `walk_color`
+  (default: one palette colour per walk), `walk_opacity` (default 1), `at_step` (show the
+  set as it stood at that step; default the last) and
+  `histogram_in_front` (default behind); the axes
+  are always painted last. `MainWindow.set_drawing()`
+  applies one. Remove it, like the font selector, once the drawing choices are settled.
+- Full Histogram: final positions of all trials in width-2 parity bins (`parity_bins`,
+  `fractions_at`), light grey bars (#d3d3d3, 1 px gaps) whose heights are each bin's share of
+  the trials (sum 1). The left step axis is hidden; a probability axis on the right runs from
+  0 to the first round value above the tallest bar. Room for both side axes is always
+  reserved (the right side: the wider of the full histogram's labels and the current
+  drawing's), so the plot (and every x position) is identical in every drawing.
+- Density image (Overlay 3): `simulation.density_grid()` counts walks per (step, 2-wide
+  position bin) - 1001 x 130 for the default set, ~0.1 s once, one column of paths at a time
+  to keep memory low - and `normalize_rows()` scales each step to its own busiest cell (raw
+  counts run from 10,000 at step 0 to ~275 at step 1000). `WalkView.density_image()` turns
+  it into a cached greyscale QImage (background to `DENSITY_DARKEST` #404040, short of
+  black), drawn stretched with nearest-neighbour scaling:
+  ~5 ms per repaint. Use this, not thousands of polylines (~3-4 s), for many walks.
+- Drawing performance: never build QPolygonF from per-point QPointF objects (~1 us each; 200
+  walks took ~290 ms per repaint). `walk_view.polygon_from_arrays()` fills the polygon's
+  storage through a numpy view (shiboken6 VoidPtr, as pyqtgraph does), ~100x faster, with a
+  per-point fallback; Overlay 2 repaints in ~70 ms, mostly Qt's own line drawing.
 - Emoji pitfall: U+23E9/U+23EA (and a few other symbols) have emoji presentation by default,
   so Windows draws them as colour emoji regardless of the font set. Append U+FE0E
   (`symbols.TEXT_PRESENTATION`) to force the plain glyph. Check any new symbol for this.
@@ -82,6 +132,7 @@ for features and behaviour; don't merge it back. The original single-file app al
     │   ├── theory.py          # p_right, final mean/sd, normal and half-normal curves
     │   ├── simulation.py      # simulate, simulate_paths, summarize, parity_bins (numpy only)
     │   ├── playback.py        # Playback timeline state machine (no GUI imports)
+    │   ├── ticks.py           # nice_ticks(): round-number axis ticks (no GUI imports)
     │   ├── cli.py             # entry point: imports the GUI lazily and runs it
     │   └── gui/               # PySide6 GUI: the only package that imports Qt
     │       ├── app.py         # create_app() (light scheme), run()
@@ -89,8 +140,9 @@ for features and behaviour; don't merge it back. The original single-file app al
     │       ├── symbols.py     # symbol_font(), SKIP_TO_START/SKIP_TO_END
     │       ├── ui_fonts.py    # candidate interface fonts (temporary, for comparison)
     │       ├── position_selector.py  # PositionSelector custom widget
+    │       ├── walk_view.py   # WalkView: the drawing area, plots walks
     │       └── fonts/         # bundled fonts, each with its licence file
-    ├── tests/                 # core only: theory, simulation, params, playback
+    ├── tests/                 # core only: theory, simulation, params, playback, ticks
     ├── tools/                 # font scripts: explorer (dearpygui), symbol subset builder
     │   └── fonts/             # downloaded fonts, git-ignored
     ├── docs/theory.md, docs/design-notes.md, docs/sketches/ (GUI sketches)
@@ -148,7 +200,8 @@ Bundled fonts and their licences (all fine for an MIT project; none may be sold 
 - Qt code lives only in `gui/`. Nothing in the core imports Qt (`cli.py` imports the GUI
   inside `main()`); logic worth testing belongs in the core, where tests need no display.
 - `simulate()`/`simulate_paths()` take an optional `rng: np.random.Generator`. Tests always
-  pass a seeded one. The GUI uses the unseeded module default.
+  pass a seeded one. The module default is seeded with `config.DEFAULT_SEED` (42), so the app
+  sees the same data every launch; tests must not rely on the default's sequence.
 - Validate the shared parameters with `params.validate()` and pass them around as a
   `WalkParams`. Read the shared controls in one place only.
 - Drive animations with `playback.Playback`: the GUI's timer calls `tick(now)` and redraws the

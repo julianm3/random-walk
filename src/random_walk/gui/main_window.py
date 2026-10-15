@@ -1,10 +1,10 @@
 """The main window, laid out after the sketches in docs/sketches (GUI_1, GUI_2, customControl):
 
     +--------------------------------------------+
-    | Font: [....]                   Random Walk |
+    | Font: [....]  Drawing: [....]  Random Walk |
     | +----------------------------------------+ |
     | |                                        | |
-    | |         drawing area (grows)           | |
+    | |    drawing area (grows): walks, axes   | |
     | |                                        | |
     | +----------------------------------------+ |
     |                  [1000 Steps, 10000 Trials]|
@@ -20,10 +20,13 @@
     +--------------------------------------------+
 
 The drawing area takes all spare space as the window resizes. Everything below it keeps its
-size, stays centred, and keeps its spacing. Nothing is connected to the simulation yet.
+size, stays centred, and keeps its spacing. At startup a data set is simulated and drawn
+(see gui/walk_view.py), in whichever drawing the drawing selector picks; the controls below
+aren't connected to it yet.
 
 TEMPORARY: a font selector at the top left switches the interface font live, to compare the
-candidates in gui/ui_fonts.py. Remove it once a font is chosen.
+candidates in gui/ui_fonts.py, and a drawing selector beside it switches what the drawing area
+shows (see DRAWINGS). Remove them once the choices are made.
 """
 
 from __future__ import annotations
@@ -43,8 +46,11 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from random_walk.config import DEFAULT_RUNS, DEFAULT_SLOPE, DEFAULT_STEPS
 from random_walk.gui import symbols, ui_fonts
 from random_walk.gui.position_selector import PositionSelector
+from random_walk.gui.walk_view import DENSITY_DARKEST, Drawing, WalkView
+from random_walk.simulation import simulate_paths
 
 TITLE = "Random Walk"
 SUMMARY = "1000 Steps, 10000 Trials"  # plain text for now
@@ -62,6 +68,39 @@ SELECTOR_BOTTOM_GAP = CONTROL_GAP  # position selector -> top slider row
 SLIDER_GAP = CONTROL_GAP  # between the two slider rows
 CONTROLS_GAP = CONTROL_GAP  # second slider row -> player controls
 SELECTOR_LABELS = ("Walk", "Trials", "Both")
+# Light grey bars in front of the walks or density are drawn this opaque (0-1), so what's
+# behind them shows through.
+OVERLAY_BAR_OPACITY = 0.6
+# Overlay 2's walks: all in Overlay 3's density grey, translucent so overlaps build up darker.
+OVERLAY_WALK_OPACITY = 0.25
+# TEMPORARY drawing selector: menu entry -> what the drawing area shows. The first is the
+# default.
+DRAWINGS = {
+    "Draw 1": Drawing(walks=1),
+    "Draw 5": Drawing(walks=5),
+    "Full Histogram": Drawing(histogram=True),
+    "Overlay 1": Drawing(walks=1, histogram=True),
+    "Overlay 2": Drawing(
+        walks=200,
+        histogram=True,
+        histogram_from_walks=True,
+        histogram_in_front=True,
+        histogram_opacity=OVERLAY_BAR_OPACITY,
+        walk_color=DENSITY_DARKEST,
+        walk_opacity=OVERLAY_WALK_OPACITY,
+    ),
+    "Overlay 3": Drawing(
+        density=True, histogram=True, histogram_in_front=True, histogram_opacity=OVERLAY_BAR_OPACITY
+    ),
+    # Overlay 3 halfway through: density up to the middle step, histogram of positions there.
+    "Overlay 4": Drawing(
+        density=True,
+        histogram=True,
+        histogram_in_front=True,
+        histogram_opacity=OVERLAY_BAR_OPACITY,
+        at_step=DEFAULT_STEPS // 2,
+    ),
+}
 # Play/Pause button: True shows the combined symbol (one fixed glyph); False swaps between
 # separate Play and Pause symbols. The tooltip follows the state either way.
 COMBINED_PLAY_PAUSE = True
@@ -70,6 +109,7 @@ PAUSED_COLOR = "#8c8c8c"  # ... and while paused (mid grey); it turns black on h
 TITLE_POINT_SIZE = 14
 SUMMARY_POINT_SIZE = 8
 SELECTOR_POINT_SIZE = 8  # position selector labels
+AXIS_POINT_SIZE = 8  # drawing area's axis labels
 INITIAL_SIZE = (1000, 760)
 
 # Slider track: the part left of the handle (already played) and the part right of it.
@@ -105,13 +145,14 @@ class MainWindow(QMainWindow):
         self.title = QLabel(TITLE)
         title_row = QHBoxLayout()
         title_row.addLayout(self._build_font_selector())  # TEMPORARY
+        title_row.addSpacing(16)
+        title_row.addLayout(self._build_drawing_selector())  # TEMPORARY
         title_row.addStretch(1)
         title_row.addWidget(self.title)
         layout.addLayout(title_row)
 
-        # Placeholder for the plot; stretch=1 gives it all the spare space on resize.
-        self.drawing_area = QFrame()
-        self.drawing_area.setFrameShape(QFrame.Shape.Box)
+        # The plot of the walks; stretch=1 gives it all the spare space on resize.
+        self.drawing_area = WalkView()
         self.drawing_area.setMinimumSize(320, 200)
         layout.addWidget(self.drawing_area, stretch=1)
 
@@ -137,6 +178,14 @@ class MainWindow(QMainWindow):
         layout.addLayout(controls)
 
         self.set_ui_font(ui_font)
+        self.set_drawing(next(iter(DRAWINGS)))
+        self.generate_data()
+
+    def generate_data(self) -> None:
+        """Simulate the data set (the default runs and steps, no wall) and show it. The
+        default generator is seeded, so this gives the same data every time the app starts."""
+        self.paths = simulate_paths(DEFAULT_RUNS, DEFAULT_STEPS, wall=None, theta=DEFAULT_SLOPE)
+        self.drawing_area.set_paths(self.paths)
 
     def set_ui_font(self, name: str) -> None:
         """Switch the interface text to candidate font `name` (see gui/ui_fonts.py). The
@@ -145,6 +194,7 @@ class MainWindow(QMainWindow):
         self.title.setFont(ui_fonts.ui_font(name, TITLE_POINT_SIZE))
         self.summary.setFont(ui_fonts.ui_font(name, SUMMARY_POINT_SIZE))
         self.position_selector.setFont(ui_fonts.ui_font(name, SELECTOR_POINT_SIZE))
+        self.drawing_area.setFont(ui_fonts.ui_font(name, AXIS_POINT_SIZE))
         self.font_selector.blockSignals(True)
         self.font_selector.setCurrentText(name)
         self.font_selector.blockSignals(False)
@@ -159,6 +209,24 @@ class MainWindow(QMainWindow):
         row.addWidget(QLabel("Font:"))
         row.addWidget(self.font_selector)
         return row
+
+    def _build_drawing_selector(self) -> QHBoxLayout:
+        """TEMPORARY: a dropdown to switch between drawings of the data set (see DRAWINGS)."""
+        self.drawing_selector = QComboBox()
+        self.drawing_selector.addItems(list(DRAWINGS))
+        self.drawing_selector.setToolTip("Temporary: switch between drawings of the data set")
+        self.drawing_selector.currentTextChanged.connect(self.set_drawing)
+        row = QHBoxLayout()
+        row.addWidget(QLabel("Drawing:"))
+        row.addWidget(self.drawing_selector)
+        return row
+
+    def set_drawing(self, name: str) -> None:
+        """Show drawing `name`, a DRAWINGS entry."""
+        self.drawing_area.set_drawing(DRAWINGS[name])
+        self.drawing_selector.blockSignals(True)
+        self.drawing_selector.setCurrentText(name)
+        self.drawing_selector.blockSignals(False)
 
     def _build_player_controls(self) -> QHBoxLayout:
         """Fast reverse, Play/Pause and fast forward, centred. Visual only for now: Play/Pause

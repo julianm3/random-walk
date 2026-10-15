@@ -44,7 +44,8 @@ The core is designed to support whichever toolkit comes next:
 ## Randomness
 
 `simulate()` and `simulate_paths()` take an optional `rng: numpy.random.Generator`. Tests pass
-seeded generators. The GUI uses the module default, which is unseeded. Two calls with
+seeded generators. The GUI uses the module default, seeded with config.DEFAULT_SEED so the
+app shows the same data every launch. Two calls with
 identically seeded generators consume random numbers identically, so
 `simulate_paths(...)[:, -1]` equals `simulate(...)`.
 

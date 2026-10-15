@@ -11,7 +11,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from random_walk import theory
-from random_walk.config import DEFAULT_SLOPE, DEFAULT_WALL
+from random_walk.config import DEFAULT_SEED, DEFAULT_SLOPE, DEFAULT_WALL
 
 IntArray = NDArray[np.int64]
 FloatArray = NDArray[np.float64]
@@ -19,7 +19,9 @@ FloatArray = NDArray[np.float64]
 # numpy's stubs declare them float.
 BinArray = NDArray[Any]
 
-_default_rng = np.random.default_rng()
+# Seeded, so the app produces the same data every time it starts. The sequence still advances
+# from one call to the next; pass your own `rng` for an independent, reproducible stream.
+_default_rng = np.random.default_rng(DEFAULT_SEED)
 
 
 def _jumps(runs: int, steps: int, theta: float, rng: np.random.Generator | None) -> IntArray:
@@ -42,7 +44,8 @@ def simulate(
     above it instead: position -> 2*wall - position. If `wall` is None, the walk is
     unrestricted (the simple case).
 
-    `rng` defaults to a module-level generator; pass a seeded one for reproducible results.
+    `rng` defaults to a module-level generator seeded with DEFAULT_SEED; pass your own
+    for an independent reproducible stream.
     """
     jumps = _jumps(runs, steps, theta, rng)
     if wall is None:
@@ -104,6 +107,28 @@ def fractions_at(positions: IntArray, bins: IntArray) -> tuple[BinArray, FloatAr
     """Bin centres and each bin's share of `positions` (raw fractions summing to 1.0)."""
     counts, edges = np.histogram(positions, bins=bins)
     return bin_centers(edges), counts / len(positions)
+
+
+def density_grid(paths: IntArray, lo: int, hi: int, bin_width: int = 2) -> IntArray:
+    """How many walks are at each (step, position bin): shape (steps + 1, bins).
+
+    Row k is step k. Column j counts positions in [lo + j*bin_width, lo + (j+1)*bin_width),
+    so with the default width every column holds one even and one odd position - walks at
+    any step land in it, whatever their parity. `lo`..`hi` must cover every position.
+    """
+    n_bins = (hi - lo) // bin_width + 1
+    steps = paths.shape[1]
+    grid = np.zeros((steps, n_bins), dtype=np.int64)
+    for step in range(steps):  # one column of paths at a time: low memory, ~30 ms for 10M
+        grid[step] = np.bincount((paths[:, step] - lo) // bin_width, minlength=n_bins)
+    return grid
+
+
+def normalize_rows(grid: IntArray) -> FloatArray:
+    """Each row scaled to its own maximum (rows of zeros stay zero), so every step is shaded
+    on the same 0..1 scale however spread out its walks are."""
+    peaks = grid.max(axis=1, keepdims=True)
+    return np.divide(grid, peaks, out=np.zeros(grid.shape), where=peaks > 0)
 
 
 class HistogramSummary(NamedTuple):

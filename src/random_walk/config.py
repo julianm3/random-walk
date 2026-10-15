@@ -5,6 +5,7 @@ DEFAULT_RUNS = 10_000
 DEFAULT_STEPS = 1000
 DEFAULT_WALL = -30  # default wall location, editable in the UI
 DEFAULT_SLOPE = 0.0  # default bias angle theta (degrees), editable in the UI
+DEFAULT_SEED = 42  # seeds the default random generator, so every run sees the same data
 MIN_SLOPE = -90.0
 MAX_SLOPE = 90.0
 MAX_RUNS_INPUT = 100_000_000  # upper bound the RUNS box accepts (MAX_JUMPS usually binds first)

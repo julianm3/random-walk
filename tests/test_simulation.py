@@ -2,7 +2,9 @@ import numpy as np
 import pytest
 
 from random_walk.simulation import (
+    density_grid,
     fractions_at,
+    normalize_rows,
     parity_bins,
     simulate,
     simulate_paths,
@@ -181,3 +183,33 @@ def test_fractions_at_sums_to_one():
     centers, fractions = fractions_at(positions, parity_bins(positions))
     np.testing.assert_array_equal(centers, [-2, 0, 2])
     np.testing.assert_allclose(fractions, [0.2, 0.4, 0.4])
+
+
+# --- density grid ----------------------------------------------------------------------------
+
+
+def test_density_grid_counts_walks_per_step_and_bin():
+    paths = np.array([[0, 1, 2], [0, -1, 0], [0, 1, 0]])  # 3 walks, 2 steps
+    grid = density_grid(paths, lo=-1, hi=2)
+    # bins of 2: [-1, 1) and [1, 3)
+    np.testing.assert_array_equal(grid, [[3, 0], [1, 2], [2, 1]])
+
+
+def test_density_grid_rows_sum_to_walk_count():
+    paths = simulate_paths(500, 40, wall=None, rng=rng())
+    grid = density_grid(paths, int(paths.min()), int(paths.max()))
+    assert grid.shape[0] == 41
+    assert (grid.sum(axis=1) == 500).all()
+
+
+def test_density_grid_has_no_empty_parity_columns():
+    # Width-2 bins hold one even and one odd position, so neither parity leaves gaps.
+    paths = simulate_paths(2000, 50, wall=None, rng=rng())
+    grid = density_grid(paths, int(paths.min()), int(paths.max()))
+    middle = grid[50, 5:-5]
+    assert (middle > 0).all()
+
+
+def test_normalize_rows_scales_each_row_to_its_peak():
+    grid = np.array([[0, 4, 2], [0, 0, 0], [1, 1, 3]])
+    np.testing.assert_allclose(normalize_rows(grid), [[0, 1, 0.5], [0, 0, 0], [1 / 3, 1 / 3, 1]])

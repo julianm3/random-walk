@@ -5,8 +5,10 @@ optional slope bias and an optional reflecting wall. The app runs thousands of w
 the results as a histogram and as several animations.
 
 > **The GUI is being rebuilt** in PySide6 (Qt), one step at a time. On this branch (`main`),
-> `random-walk` opens an early version: the window layout, with nothing connected to the
-> simulation yet. The previous Dear PyGui interface is on the [`ui_prototype`](https://github.com/julianm3/random-walk/tree/ui_prototype) branch
+> `random-walk` opens an early version: it simulates a seeded data set (10,000 walks of
+> 1000 steps) and draws it - walks, histograms and a density view, picked from a temporary
+> Drawing menu. The controls below the drawing aren't connected yet. The previous Dear
+> PyGui interface is on the [`ui_prototype`](https://github.com/julianm3/random-walk/tree/ui_prototype) branch
 > (tag `dpg-final`):
 >
 > ```powershell
