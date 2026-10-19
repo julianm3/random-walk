@@ -6,29 +6,18 @@ import numpy as np
 from numpy.typing import NDArray
 
 
-def p_right(theta: float) -> float:
-    """Probability of a +1 step for slope `theta` (degrees, -90 to 90).
+def final_mean(steps: int, p_right: float) -> float:
+    """Expected final position of a walk with no wall: steps * (per-step mean 2p - 1)."""
+    return steps * (2 * p_right - 1)
 
-    Positive theta biases left, negative biases right; theta=0 is the unbiased 50/50 case, and
-    +/-90 make the walk fully one-directional.
+
+def final_sd(steps: int, p_right: float) -> float:
+    """Final-position sd of a walk with no wall: sqrt(steps * (per-step variance 4p(1 - p))).
+
+    Exactly 0 at p_right = 0 or 1 (every step goes the same way), so callers can test for the
+    deterministic case with `== 0`.
     """
-    return float(0.5 - 0.5 * np.sin(np.radians(theta)))
-
-
-def final_mean(steps: int, theta: float) -> float:
-    """Expected final position of a walk with no wall: steps * (per-step mean -sin(theta))."""
-    return float(-steps * np.sin(np.radians(theta)))
-
-
-def final_sd(steps: int, theta: float) -> float:
-    """Final-position sd of a walk with no wall: sqrt(steps) * (per-step sd |cos(theta)|).
-
-    Computed as sqrt(steps * (1 - sin^2(theta))), which equals the above but is exactly 0 at
-    theta = +/-90 (sin is exactly +/-1.0 there, while cos(90 degrees) is ~6e-17 in floating
-    point), so callers can test for the deterministic case with `== 0`.
-    """
-    sin = np.sin(np.radians(theta))
-    return float(np.sqrt(steps * (1 - sin**2)))
+    return float(np.sqrt(steps * 4 * p_right * (1 - p_right)))
 
 
 def normal_pdf(x: NDArray[np.float64], mean: float, sd: float) -> NDArray[np.float64]:
@@ -41,11 +30,11 @@ def half_normal_pdf(x: NDArray[np.float64], wall: float, sd: float) -> NDArray[n
     return (2 / (sd * np.sqrt(2 * np.pi))) * np.exp(-((x - wall) ** 2) / (2 * sd**2))
 
 
-def wall_curve_valid(theta: float) -> bool:
+def wall_curve_valid(p_right: float) -> bool:
     """The half-normal comes from the reflection principle, which needs a driftless walk.
 
     A biased walk reflected off a wall is a materially different, more involved problem, and
     the half-normal would just be wrong for it, so callers should hide it rather than show a
     guess.
     """
-    return theta == 0
+    return p_right == 0.5

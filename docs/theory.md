@@ -4,36 +4,37 @@ The formulas the app uses, and where they come from. Code: `src/random_walk/theo
 
 ## The step
 
-Each step is +1 (right) or -1 (left). The slope angle theta (degrees, -90 to 90) sets the bias:
+Each step is +1 (right) with probability p = P(right), between 0 and 1, and -1 (left)
+otherwise:
 
-    P(right) = 0.5 - 0.5 sin(theta)
-    P(left)  = 1 - P(right) = 0.5 + 0.5 sin(theta)
+    P(right) = p
+    P(left)  = 1 - p
 
-Positive theta biases left and negative theta biases right. theta = 0 is the fair 50/50 walk,
-and theta = +/-90 makes every step go the same way.
+p > 0.5 drifts right and p < 0.5 drifts left. p = 0.5 is the fair 50/50 walk, and p = 0 or 1
+makes every step go the same way.
 
-Mean and variance of one step, with p = P(right):
+Mean and variance of one step:
 
-    E[step]   = p(+1) + (1 - p)(-1) = 2p - 1                 = -sin(theta)
-    Var[step] = E[step^2] - E[step]^2 = 1 - sin^2(theta)     =  cos^2(theta)
+    E[step]   = p(+1) + (1 - p)(-1)          = 2p - 1
+    Var[step] = E[step^2] - E[step]^2 = 1 - (2p - 1)^2 = 4p(1 - p)
+
+Until v0.3.0 the bias was a slope angle theta (degrees, -90 to 90), with
+P(right) = 0.5 - 0.5 sin(theta), so positive theta drifted left. p = 0.5 corresponds to
+theta = 0 and draws exactly the same walks from the same seed.
 
 ## No wall
 
 The final position after STEPS = n steps is a sum of n independent steps, so
 
-    mean = -n sin(theta)
-    sd   = sqrt(n) |cos(theta)|
+    mean = n (2p - 1)
+    sd   = sqrt(4p(1 - p) n)
 
 By the central limit theorem, for large n the final position is approximately
 Normal(mean, sd). That is the theory curve drawn when the wall is off.
 
-At theta = +/-90 the sd is 0 and the walk is deterministic: every walk ends at -/+n. There is
-no spread for a curve to describe, so the app hides the theory curve, with or without a wall.
-
-The code computes the sd as sqrt(n (1 - sin^2(theta))) rather than sqrt(n) |cos(theta)|. The
-two are equal, but in floating point cos(90 degrees) is about 6e-17, not 0, while sin(90
-degrees) is exactly 1. With the cos form, the sd at +/-90 came out as about 2e-15, and the
-"normal" curve peaked near 1e14, squashing the histogram flat when the axes were fitted to it.
+At p = 0 or 1 the sd is exactly 0 and the walk is deterministic: every walk ends at -n or +n.
+There is no spread for a curve to describe (and the normal density would divide by zero), so
+the app hides the theory curve, with or without a wall.
 
 ## Parity
 
@@ -54,7 +55,7 @@ keeps it, because 2w - x has the same parity as x.
 The simulation applies the rule as a fold after every step, x -> w + |x - w|. That is
 identical to the mirror for positions below w and does nothing at or above w.
 
-### Theory curve with a wall (theta = 0 only)
+### Theory curve with a wall (p = 0.5 only)
 
 For a fair walk, the walk reflected at w has the same distribution as the free walk folded
 at w (the reflection principle): Y = w + |X - w|, with X ~ Normal(0, sqrt(n)). Its density for
@@ -69,11 +70,11 @@ The app currently draws the simpler half-normal centred on the wall:
 The two agree only when the walk starts at the wall (w = 0). See *Known limitations*.
 
 The reflection principle needs a driftless walk. A biased walk reflected off a wall is a
-different and harder problem, so the wall curve is hidden whenever theta != 0.
+different and harder problem, so the wall curve is hidden whenever p != 0.5.
 
 ## Known limitations
 
 - **Wall curve ignores the starting offset:** the half-normal assumes the walk starts at the
   wall, but it starts at 0. With the defaults (wall -30, 1000 steps, sd about 31.6) the offset
   is about one sd and the curve visibly misfits. The folded normal above is the large-n fix
-  for theta = 0, and also handles a wall above 0.
+  for p = 0.5, and also handles a wall above 0.

@@ -49,7 +49,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from random_walk.config import DEFAULT_RUNS, DEFAULT_SLOPE, DEFAULT_STEPS
+from random_walk.config import DEFAULT_P_RIGHT, DEFAULT_RUNS, DEFAULT_STEPS
 from random_walk.gui import symbols, ui_fonts
 from random_walk.gui.position_selector import PositionSelector
 from random_walk.gui.walk_view import DENSITY_DARKEST, Drawing, WalkView
@@ -263,8 +263,8 @@ class MainWindow(QMainWindow):
     def generate_data(self) -> None:
         """Simulate the data set (the default runs and steps, no wall) and show it. The
         default generator is seeded, so this gives the same data every time the app starts."""
-        self.paths = simulate_paths(DEFAULT_RUNS, DEFAULT_STEPS, wall=None, theta=DEFAULT_SLOPE)
-        self.drawing_area.set_paths(self.paths, theta=DEFAULT_SLOPE)
+        self.paths = simulate_paths(DEFAULT_RUNS, DEFAULT_STEPS, wall=None, p_right=DEFAULT_P_RIGHT)
+        self.drawing_area.set_paths(self.paths, p_right=DEFAULT_P_RIGHT)
 
     def apply_fonts(self) -> None:
         """Set the interface font (Source Code Pro): the default for every widget, plus each

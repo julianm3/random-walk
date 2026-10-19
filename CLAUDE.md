@@ -122,9 +122,9 @@ A completely new GUI is being built incrementally in **PySide6** (Qt 6, via the
   0 to the first round value above the tallest bar (or the theory curve's peak). Full
   Histogram, Overlay 3 and Overlay 4 also show the theory curve (`Drawing.theory`, for the
   shown step - so Overlay 4's is the step-50 curve): a 1 px light red (#F08080) line,
-  the normal density (mean -n sin(theta), sd sqrt(n)|cos(theta)|, from theory.py) times the
+  the normal density (mean n(2p - 1), sd sqrt(4p(1 - p) n), from theory.py) times the
   bin width 2, so it matches the bars' per-bin probabilities; `set_paths()` takes the
-  simulation's theta for it. Room for both side axes is always
+  simulation's p_right for it. Room for both side axes is always
   reserved (the right side: the wider of the full histogram's labels and the current
   drawing's), so the plot (and every x position) is identical in every drawing.
 - Density image (Overlay 3): `simulation.density_grid()` counts walks per (step, 2-wide
@@ -158,7 +158,7 @@ for features and behaviour; don't merge it back. The original single-file app al
     ├── src/random_walk/
     │   ├── config.py          # DEFAULT_* values, limits, playback speeds
     │   ├── params.py          # WalkParams (frozen dataclass) + validate()
-    │   ├── theory.py          # p_right, final mean/sd, normal and half-normal curves
+    │   ├── theory.py          # final mean/sd for p_right, normal and half-normal curves
     │   ├── simulation.py      # simulate, simulate_paths, summarize, parity_bins (numpy only)
     │   ├── playback.py        # Playback timeline state machine (no GUI imports)
     │   ├── ticks.py           # nice_ticks(): round-number axis ticks (no GUI imports)
@@ -206,19 +206,20 @@ Bundled fonts and their licences (all fine for an MIT project; none may be sold 
 
 ## Physics (keep these exact)
 
-- Step is +1 or -1. P(right) = 0.5 - 0.5*sin(theta), P(left) = 1 - P(right).
-  Positive theta biases left, negative biases right.
+- Step is +1 with probability p = P(right) (`p_right`, 0 to 1, default 0.5), -1 with
+  P(left) = 1 - p. p > 0.5 drifts right, p < 0.5 drifts left. (v0.3.0 replaced the old slope
+  angle theta, P(right) = 0.5 - 0.5 sin(theta); p = 0.5 draws the same walks as theta = 0.)
 - Wall: a step below WALL is reflected, position -> 2*WALL - position (equivalently
   WALL + abs(position - WALL)). It is NOT a clamp. The reflect rule preserves parity; clamp
   does not, and we dropped clamp deliberately.
 - Parity: without a wall, or with the reflecting wall, final positions all share the parity of
   STEPS, so histogram bins are width 2. Bin width 1 leaves every other bin empty.
-- Theory curve, no wall: Normal(mean = -STEPS*sin(theta), sd = sqrt(STEPS)*|cos(theta)|).
-  Per-step mean is -sin(theta), per-step variance is cos^2(theta).
-- At theta = +/-90 the sd is exactly 0 (computed as sqrt(STEPS*(1 - sin^2)), never via cos,
-  which is ~6e-17 at 90 degrees) and `summarize()` hides the curve, with or without a wall.
-- Theory curve, wall: half-normal approximation, sd = sqrt(STEPS). Valid only at theta = 0
-  (reflection principle needs a driftless walk). Hidden when theta != 0.
+- Theory curve, no wall: Normal(mean = STEPS*(2p - 1), sd = sqrt(4p(1 - p)*STEPS)).
+  Per-step mean is 2p - 1, per-step variance is 4p(1 - p).
+- At p = 0 or 1 the sd is exactly 0 (the walk is deterministic, ending at -/+STEPS), and
+  `summarize()` and `WalkView.theory_curve()` hide the curve, with or without a wall.
+- Theory curve, wall: half-normal approximation, sd = sqrt(STEPS). Valid only at p = 0.5
+  (reflection principle needs a driftless walk). Hidden when p != 0.5.
 - docs/theory.md has the derivations and the known limitations (see Open items).
 
 ## Architecture rules
@@ -252,12 +253,8 @@ Bundled fonts and their licences (all fine for an MIT project; none may be sold 
 The data set stays fixed at 10,000 trials x 1000 steps; the sliders choose subsets of it, and
 Regenerate changes only the seed and P(right).
 
-1. **Bias probability.** Replace the slope theta with p = P(right) throughout the core
-   (theory.py, simulation.py, params.py, config.py `DEFAULT_SLOPE`, `WalkView.set_paths(theta=)`),
-   the tests and docs/theory.md. New physics: step +1 with probability p, -1 with 1 - p; per-step
-   mean 2p - 1, variance 4p(1 - p); theory Normal(mean = n(2p - 1), sd = sqrt(4p(1 - p) n)).
-   NOTE the sign: p > 0.5 drifts right (positive theta drifted left). At p = 0 or 1 the sd is
-   exactly 0: hide the theory curve (as at theta = +/-90 now). Rewrite the Physics section.
+1. **Bias probability.** DONE in v0.3.0: `p_right` (float, 0 to 1) replaced theta in the
+   core, GUI, tests and docs. Unused DPG-era config constants were removed at the same time.
 2. **Selector modes and slider limits.** Selector becomes two positions, "Steps" and "Trials"
    (remove "Both"; "Walk" -> "Steps").
    - Steps mode = the current animation. The Steps slider sets the END step (at 250 the

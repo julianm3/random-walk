@@ -11,7 +11,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from random_walk import theory
-from random_walk.config import DEFAULT_SEED, DEFAULT_SLOPE, DEFAULT_WALL
+from random_walk.config import DEFAULT_P_RIGHT, DEFAULT_SEED, DEFAULT_WALL
 
 IntArray = NDArray[np.int64]
 FloatArray = NDArray[np.float64]
@@ -24,21 +24,20 @@ BinArray = NDArray[Any]
 _default_rng = np.random.default_rng(DEFAULT_SEED)
 
 
-def _jumps(runs: int, steps: int, theta: float, rng: np.random.Generator | None) -> IntArray:
-    p = theory.p_right(theta)
-    return (rng or _default_rng).choice([-1, 1], size=(runs, steps), p=[1 - p, p])
+def _jumps(runs: int, steps: int, p_right: float, rng: np.random.Generator | None) -> IntArray:
+    return (rng or _default_rng).choice([-1, 1], size=(runs, steps), p=[1 - p_right, p_right])
 
 
 def simulate(
     runs: int,
     steps: int,
     wall: int | None = DEFAULT_WALL,
-    theta: float = DEFAULT_SLOPE,
+    p_right: float = DEFAULT_P_RIGHT,
     rng: np.random.Generator | None = None,
 ) -> IntArray:
     """Return final positions of `runs` walks of `steps` jumps of +1 or -1.
 
-    `theta` (degrees, -90 to 90) biases the walk; see theory.p_right().
+    Each jump is +1 with probability `p_right` (0 to 1) and -1 otherwise.
 
     If `wall` is a number, a step that would take the position below it is mirrored back
     above it instead: position -> 2*wall - position. If `wall` is None, the walk is
@@ -47,7 +46,7 @@ def simulate(
     `rng` defaults to a module-level generator seeded with DEFAULT_SEED; pass your own
     for an independent reproducible stream.
     """
-    jumps = _jumps(runs, steps, theta, rng)
+    jumps = _jumps(runs, steps, p_right, rng)
     if wall is None:
         return jumps.sum(axis=1)
 
@@ -63,7 +62,7 @@ def simulate_paths(
     runs: int,
     steps: int,
     wall: int | None = DEFAULT_WALL,
-    theta: float = DEFAULT_SLOPE,
+    p_right: float = DEFAULT_P_RIGHT,
     rng: np.random.Generator | None = None,
 ) -> IntArray:
     """Like simulate(), but returns the whole position history, not just the final one.
@@ -72,7 +71,7 @@ def simulate_paths(
     position after k steps - so paths[:, -1] is exactly what simulate() would have returned
     from an identically seeded `rng`.
     """
-    jumps = _jumps(runs, steps, theta, rng)
+    jumps = _jumps(runs, steps, p_right, rng)
     paths = np.zeros((runs, steps + 1), dtype=np.int64)
     if wall is None:
         np.cumsum(jumps, axis=1, out=paths[:, 1:])
@@ -147,7 +146,7 @@ def summarize(
     steps: int,
     wall_enabled: bool,
     wall_value: int = DEFAULT_WALL,
-    theta: float = DEFAULT_SLOPE,
+    p_right: float = DEFAULT_P_RIGHT,
     bins: IntArray | None = None,
     curve_x_range: tuple[float, float] | None = None,
 ) -> HistogramSummary:
@@ -163,8 +162,8 @@ def summarize(
     counts, edges = np.histogram(finals, bins=bins, density=True)
     centers = bin_centers(edges)
 
-    mean_theory = theory.final_mean(steps, theta)
-    sigma = theory.final_sd(steps, theta)
+    mean_theory = theory.final_mean(steps, p_right)
+    sigma = theory.final_sd(steps, p_right)
 
     if curve_x_range is not None:
         x_lo, x_hi = curve_x_range
@@ -174,12 +173,12 @@ def summarize(
     x = np.linspace(x_lo, x_hi, 400)
 
     if sigma == 0:
-        # theta = +/-90: every step goes the same way, so every walk ends in the same place.
+        # p_right = 0 or 1: every step goes the same way, so every walk ends in the same place.
         # There is no spread for a curve to describe (and its formula would divide by zero).
         show_curve = False
         curve = np.zeros_like(x)
     elif wall_enabled:
-        show_curve = theory.wall_curve_valid(theta)
+        show_curve = theory.wall_curve_valid(p_right)
         curve = theory.half_normal_pdf(x, wall_value, sigma)
     else:
         show_curve = True

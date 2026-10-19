@@ -30,16 +30,16 @@ def test_simulate_paths_shape_and_start():
 
 
 def test_seeded_runs_are_reproducible():
-    a = simulate(100, 50, wall=-5, theta=10, rng=rng(7))
-    b = simulate(100, 50, wall=-5, theta=10, rng=rng(7))
+    a = simulate(100, 50, wall=-5, p_right=0.4, rng=rng(7))
+    b = simulate(100, 50, wall=-5, p_right=0.4, rng=rng(7))
     np.testing.assert_array_equal(a, b)
 
 
 @pytest.mark.parametrize("wall", [None, -5, 0, 3])
-@pytest.mark.parametrize("theta", [0, 25, -40])
-def test_paths_end_where_simulate_does(wall, theta):
-    finals = simulate(200, 60, wall=wall, theta=theta, rng=rng())
-    paths = simulate_paths(200, 60, wall=wall, theta=theta, rng=rng())
+@pytest.mark.parametrize("p_right", [0.5, 0.3, 0.8])
+def test_paths_end_where_simulate_does(wall, p_right):
+    finals = simulate(200, 60, wall=wall, p_right=p_right, rng=rng())
+    paths = simulate_paths(200, 60, wall=wall, p_right=p_right, rng=rng())
     np.testing.assert_array_equal(paths[:, -1], finals)
 
 
@@ -48,43 +48,48 @@ def test_steps_are_plus_or_minus_one_without_wall():
     assert set(np.unique(np.diff(paths, axis=1))) <= {-1, 1}
 
 
-# --- the slope -----------------------------------------------------------------------------
+# --- the bias ------------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("theta", [0, 30, -30, 70])
-def test_empirical_p_right_matches_slope_formula(theta):
+@pytest.mark.parametrize("p_right", [0.5, 0.25, 0.75, 0.9])
+def test_empirical_p_right_matches(p_right):
     n = 200_000
-    first_steps = simulate(n, 1, wall=None, theta=theta, rng=rng())
+    first_steps = simulate(n, 1, wall=None, p_right=p_right, rng=rng())
     p_hat = (first_steps == 1).mean()
-    p = 0.5 - 0.5 * np.sin(np.radians(theta))
-    assert abs(p_hat - p) < 5 * np.sqrt(p * (1 - p) / n)
+    assert abs(p_hat - p_right) < 5 * np.sqrt(p_right * (1 - p_right) / n)
 
 
-def test_theta_minus_90_always_steps_right():
-    np.testing.assert_array_equal(simulate(10, 25, wall=None, theta=-90, rng=rng()), 25)
+def test_p_right_one_always_steps_right():
+    np.testing.assert_array_equal(simulate(10, 25, wall=None, p_right=1, rng=rng()), 25)
 
 
-def test_theta_plus_90_always_steps_left():
-    np.testing.assert_array_equal(simulate(10, 25, wall=None, theta=90, rng=rng()), -25)
+def test_p_right_zero_always_steps_left():
+    np.testing.assert_array_equal(simulate(10, 25, wall=None, p_right=0, rng=rng()), -25)
 
 
-@pytest.mark.parametrize("theta", [0, 30, -60])
-def test_mean_and_sd_match_theory(theta):
+@pytest.mark.parametrize("p_right", [0.5, 0.75, 0.2])
+def test_mean_and_sd_match_theory(p_right):
     steps, runs = 400, 20_000
-    finals = simulate(runs, steps, wall=None, theta=theta, rng=rng())
-    rad = np.radians(theta)
-    sd = np.sqrt(steps) * abs(np.cos(rad))
-    assert finals.mean() == pytest.approx(-steps * np.sin(rad), abs=5 * sd / np.sqrt(runs))
+    finals = simulate(runs, steps, wall=None, p_right=p_right, rng=rng())
+    sd = np.sqrt(4 * p_right * (1 - p_right) * steps)
+    assert finals.mean() == pytest.approx(steps * (2 * p_right - 1), abs=5 * sd / np.sqrt(runs))
     assert finals.std() == pytest.approx(sd, rel=0.03)
+
+
+def test_fair_walk_unchanged_from_slope_version():
+    # Guard: p_right = 0.5 must draw the same walks as the old theta = 0 (p = 0.5 - 0.5 sin 0),
+    # so the app's seeded data set did not change when the slope was replaced.
+    expected = np.random.default_rng(3).choice([-1, 1], size=(20, 30), p=[0.5, 0.5])
+    np.testing.assert_array_equal(simulate(20, 30, wall=None, rng=rng(3)), expected.sum(axis=1))
 
 
 # --- the wall ------------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("wall", [-10, -1, 0])
-@pytest.mark.parametrize("theta", [0, 45])
-def test_positions_never_fall_below_wall(wall, theta):
-    paths = simulate_paths(500, 200, wall=wall, theta=theta, rng=rng())
+@pytest.mark.parametrize("p_right", [0.5, 0.15])
+def test_positions_never_fall_below_wall(wall, p_right):
+    paths = simulate_paths(500, 200, wall=wall, p_right=p_right, rng=rng())
     assert paths.min() >= wall
 
 
@@ -97,7 +102,7 @@ def test_wall_above_start_is_crossed_on_the_first_step():
 def test_wall_reflects_rather_than_clamps():
     # Always stepping left into a wall at 0: -1 reflects to +1, then back to 0, and so on.
     # A clamp would stick at 0 instead.
-    paths = simulate_paths(3, 6, wall=0, theta=90, rng=rng())
+    paths = simulate_paths(3, 6, wall=0, p_right=0, rng=rng())
     np.testing.assert_array_equal(paths, np.tile([0, 1, 0, 1, 0, 1, 0], (3, 1)))
 
 
@@ -107,7 +112,7 @@ def test_wall_reflects_rather_than_clamps():
 @pytest.mark.parametrize("steps", [99, 100])
 @pytest.mark.parametrize("wall", [None, -7, 0, 4])
 def test_final_positions_share_parity_of_steps(steps, wall):
-    finals = simulate(1000, steps, wall=wall, theta=20, rng=rng())
+    finals = simulate(1000, steps, wall=wall, p_right=0.35, rng=rng())
     assert (finals % 2 == steps % 2).all()
 
 
@@ -145,18 +150,18 @@ def test_summarize_curve_starts_at_wall():
 
 
 def test_summarize_hides_wall_curve_when_biased():
-    finals = simulate(500, 100, wall=-10, theta=15, rng=rng())
-    assert not summarize(finals, 100, True, -10, theta=15).show_curve
+    finals = simulate(500, 100, wall=-10, p_right=0.4, rng=rng())
+    assert not summarize(finals, 100, True, -10, p_right=0.4).show_curve
 
 
 @pytest.mark.filterwarnings("error")  # no divide-by-zero warnings from the curve formulas
-@pytest.mark.parametrize("theta", [90, -90])
+@pytest.mark.parametrize("p_right", [0, 1])
 @pytest.mark.parametrize("wall_enabled", [False, True])
-def test_summarize_hides_curve_when_fully_biased(theta, wall_enabled):
-    # Regression: at +/-90 the sd is 0, and the curve used to spike to ~1e14, swamping the
-    # histogram when the plot axes were fitted to it.
-    finals = simulate(200, 100, wall=-10 if wall_enabled else None, theta=theta, rng=rng())
-    s = summarize(finals, 100, wall_enabled, wall_value=-10, theta=theta)
+def test_summarize_hides_curve_when_fully_biased(p_right, wall_enabled):
+    # At p_right = 0 or 1 the sd is 0, and a curve would divide by zero (it once spiked to
+    # ~1e14, swamping the histogram when the plot axes were fitted to it).
+    finals = simulate(200, 100, wall=-10 if wall_enabled else None, p_right=p_right, rng=rng())
+    s = summarize(finals, 100, wall_enabled, wall_value=-10, p_right=p_right)
     assert not s.show_curve
     assert np.isfinite(s.curve_y).all() and s.curve_y.max() == 0
     assert (s.counts * 2).sum() == pytest.approx(1.0)
@@ -173,7 +178,7 @@ def test_summarize_respects_fixed_bins_and_curve_range():
 def test_summarize_stats_line():
     finals = np.array([-2, 0, 2])
     s = summarize(finals, 2, wall_enabled=False)
-    assert s.stats == "mean = 0.00, sd = 1.63 (theory: -0.00, 1.41), min = -2, max = 2"
+    assert s.stats == "mean = 0.00, sd = 1.63 (theory: 0.00, 1.41), min = -2, max = 2"
     wall_stats = summarize(finals, 2, wall_enabled=True, wall_value=-2).stats
     assert wall_stats == "mean = 0.00, sd = 1.63, min = -2, max = 2"
 

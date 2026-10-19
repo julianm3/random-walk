@@ -1,7 +1,7 @@
 # random-walk
 
 An interactive explorer for 1D random walks. Each walk takes STEPS jumps of +1 or -1, with an
-optional slope bias and an optional reflecting wall. The app runs thousands of walks and shows
+optional left/right bias and an optional reflecting wall. The app runs thousands of walks and shows
 the results as a histogram and as several animations.
 
 > **The GUI is being rebuilt** in PySide6 (Qt), one step at a time. On this branch (`main`),
@@ -19,7 +19,7 @@ the results as a histogram and as several animations.
 ## Features (previous GUI, to be carried into the new one)
 
 - **Shared parameters:** RUNS, STEPS, an optional reflecting WALL, and a SLOPE bias (theta,
-  -90 to 90 degrees).
+  -90 to 90 degrees). The new GUI replaces the slope with P(right), the chance of a +1 step.
 - **Histogram:** final positions, with the theoretical curve overlaid.
 - **Animations** on a shared timeline, with play, pause, reverse, fast-forward, step and scrub
   controls:
@@ -56,7 +56,7 @@ src/random_walk/
     config.py        default values and limits
     params.py        WalkParams and its validation
     simulation.py    simulate, simulate_paths, summarize (numpy only)
-    theory.py        slope formula, normal and half-normal curves
+    theory.py        mean and sd for the bias, normal and half-normal curves
     playback.py      timeline playback state (no GUI imports)
     cli.py           command-line entry point
     gui/             PySide6 (Qt) interface, in progress

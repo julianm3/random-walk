@@ -174,7 +174,7 @@ class WalkView(QFrame):
         self._paths: NDArray[np.int64] | None = None
         self._x_range = (0, 0)
         self._steps = 0
-        self._theta = 0.0
+        self._p_right = 0.5
         self._drawing = Drawing(walks=1)
         # Final-position histogram of every trial: bin centres and each bin's share.
         self._bins: NDArray[Any] = np.zeros(0)
@@ -182,12 +182,12 @@ class WalkView(QFrame):
         self._density_shade: NDArray[np.float64] | None = None  # built on first use
         self._density_images: dict[int, QImage] = {}  # by last step shown
 
-    def set_paths(self, paths: NDArray[np.int64], theta: float = 0.0) -> None:
+    def set_paths(self, paths: NDArray[np.int64], p_right: float = 0.5) -> None:
         """The data set to draw: shape (trials, steps + 1), as from simulate_paths()."""
         self._paths = paths
         self._x_range = (int(paths.min()), int(paths.max()))
         self._steps = paths.shape[1] - 1
-        self._theta = theta  # slope the walks were simulated with, for the theory curve
+        self._p_right = p_right  # bias the walks were simulated with, for the theory curve
         finals = paths[:, -1]
         self._bins, self._fractions = fractions_at(finals, parity_bins(finals))
         self._density_shade = None
@@ -256,7 +256,7 @@ class WalkView(QFrame):
             return [], 1.0
         if not full and self._drawing.probability_from_theory:
             curve = self.theory_curve()
-            if curve is not None:  # (none at step 0 or theta = +/-90: fall back to the bars)
+            if curve is not None:  # (none at step 0 or p_right = 0 or 1: fall back to the bars)
                 top = float(curve[1].max()) * (1 + THEORY_HEADROOM)
                 return nice_ticks(0, top, self._max_y_ticks()), top
         highest = float(fractions.max())
@@ -276,16 +276,16 @@ class WalkView(QFrame):
 
     def theory_curve(self) -> tuple[NDArray[np.float64], NDArray[np.float64]] | None:
         """The theoretical chance of a walk ending in each width-2 bin, at the shown step: the
-        normal density (mean -n sin(theta), sd sqrt(n) |cos(theta)|) times the bin width, as
-        (positions, probabilities) across the x range. None when the sd is 0 (theta = +/-90)."""
+        normal density (mean n(2p - 1), sd sqrt(4p(1 - p) n)) times the bin width, as
+        (positions, probabilities) across the x range. None when the sd is 0 (p = 0 or 1)."""
         n = self.shown_step()
-        sd = theory.final_sd(n, self._theta)
+        sd = theory.final_sd(n, self._p_right)
         if sd == 0:
             return None
         lo, hi = self._x_range
         xs = np.linspace(lo, hi, THEORY_SAMPLES)
         bin_width = 2  # the histogram's bins; positions share one parity, so one per bin
-        return xs, theory.normal_pdf(xs, theory.final_mean(n, self._theta), sd) * bin_width
+        return xs, theory.normal_pdf(xs, theory.final_mean(n, self._p_right), sd) * bin_width
 
     def y_ticks(self) -> list[float]:
         """Steps that get a tick on the left axis (only when walks are drawn)."""
