@@ -4,9 +4,13 @@ Project notes for Claude Code. Read this first in every session.
 
 ## What this project is
 
-An interactive 1D random walk explorer in Python. Users set RUNS, STEPS, an optional reflecting
-WALL, and a SLOPE bias (theta, -90 to 90 degrees). The app shows a final-position histogram
-and animated views: Distribution, Single Walk, Evolving Histogram, All Paths.
+An interactive 1D random walk explorer in Python. The user picks how many steps and trials to
+animate, an optional reflecting WALL, and the left/right bias as the probability of stepping
+right. A minimalist UI switches between two animation modes:
+
+- **Steps**: all the chosen trials advance step by step, showing the evolving step density and
+  histogram (the animation implemented in v0.2.5).
+- **Trials**: the histogram of final positions grows as trials are added one by one.
 
 Packaged as `src/random_walk` (hatchling, Python 3.11+, MIT). The repo is at
 `c:\dev\random-walk` (outside OneDrive, to avoid sync problems with git) and is hosted on
@@ -23,7 +27,7 @@ A completely new GUI is being built incrementally in **PySide6** (Qt 6, via the
 
 - Increment 1 (GUI_1, released as v0.2.0): window titled "Random Walk", title label top right,
   an empty drawing area that grows with the window, a plain-text summary box ("1000 Steps,
-  10000 Times") under it on the right, and a fixed-size (640x24 px) slider 0-1000 centred
+  10000 Trials") under it on the right, and a fixed-size (640x24 px) slider 0-1000 centred
   below, with left/right buttons that jump it to its limits. Nothing is connected to the
   simulation yet.
 - Slider look (user's choices): style sheet with a 1 px track (`SLIDER_TRACK_WIDTH`), black
@@ -103,7 +107,7 @@ A completely new GUI is being built incrementally in **PySide6** (Qt 6, via the
   same step and x axes; the probability axis fits that histogram, 0-0.12).
   In Overlays 2-4 the bars are light
   grey at `OVERLAY_BAR_OPACITY` (0.6) in front, so the walks or density show through. Overlay
-  2's walks are all Overlay 3's density grey (#404040) at `OVERLAY_WALK_OPACITY` (0.25), so
+  2's walks are all in the density grey (`DENSITY_DARKEST`) at `OVERLAY_WALK_OPACITY` (0.25), so
   overlaps build up darker like the density shading. A `Drawing` has independent `density`,
   `walks` and `histogram` parts, plus `histogram_from_walks` (count only the drawn walks),
   `histogram_color` (default light grey), `histogram_opacity` (default 1), `walk_color`
@@ -127,8 +131,9 @@ A completely new GUI is being built incrementally in **PySide6** (Qt 6, via the
   position bin) - 1001 x 130 for the default set, ~0.1 s once, one column of paths at a time
   to keep memory low - and `normalize_rows()` scales each step to its own busiest cell (raw
   counts run from 10,000 at step 0 to ~275 at step 1000). `WalkView.density_image()` turns
-  it into a cached greyscale QImage (background to `DENSITY_DARKEST` #404040, short of
-  black), drawn stretched with nearest-neighbour scaling:
+  it into a cached greyscale QImage (background to `DENSITY_DARKEST` #222222, short of
+  black; shade raised to `DENSITY_GAMMA` 0.3 so sparse cells show - both the user's choice),
+  drawn stretched with nearest-neighbour scaling:
   ~5 ms per repaint. Use this, not thousands of polylines (~3-4 s), for many walks.
 - Drawing performance: never build QPolygonF from per-point QPointF objects (~1 us each; 200
   walks took ~290 ms per repaint). `walk_view.polygon_from_arrays()` fills the polygon's
@@ -242,13 +247,60 @@ Bundled fonts and their licences (all fine for an MIT project; none may be sold 
   the generator (`random_walk.simulation._default_rng = np.random.default_rng(seed)`).
 - mypy: don't pin `python_version` to 3.11. numpy 2.5's stubs don't resolve for that target.
 
-## Open items
+## Next steps (agreed 2026-10-19; build in this order, one increment each)
 
-- Continue the new GUI from the user's sketches; then add pytest-qt tests and CI (GitHub
-  Actions) when the user asks.
-- Planned: a seed control in the UI.
-- Known physics issue (see docs/theory.md): the wall curve is a half-normal centred on the
-  wall and ignores that the walk starts at 0; the folded normal phi(y) + phi(2w - y) is the
-  correct large-STEPS curve at theta = 0.
+The data set stays fixed at 10,000 trials x 1000 steps; the sliders choose subsets of it, and
+Regenerate changes only the seed and P(right).
+
+1. **Bias probability.** Replace the slope theta with p = P(right) throughout the core
+   (theory.py, simulation.py, params.py, config.py `DEFAULT_SLOPE`, `WalkView.set_paths(theta=)`),
+   the tests and docs/theory.md. New physics: step +1 with probability p, -1 with 1 - p; per-step
+   mean 2p - 1, variance 4p(1 - p); theory Normal(mean = n(2p - 1), sd = sqrt(4p(1 - p) n)).
+   NOTE the sign: p > 0.5 drifts right (positive theta drifted left). At p = 0 or 1 the sd is
+   exactly 0: hide the theory curve (as at theta = +/-90 now). Rewrite the Physics section.
+2. **Selector modes and slider limits.** Selector becomes two positions, "Steps" and "Trials"
+   (remove "Both"; "Walk" -> "Steps").
+   - Steps mode = the current animation. The Steps slider sets the END step (at 250 the
+     animation runs steps 0 -> 250); the Trials slider sets how many trials take part (the
+     first N of the 10,000).
+   - Trials mode: the Steps slider is locked at 1000 and the Trials slider goes to 0; Play
+     grows the final-position histogram from 0 to 10,000 trials in about 30 s (~11 trials per
+     frame at 30 fps). No step data in this view. The legend (step 5) updates per trial.
+   - Then remove the temporary Drawing dropdown and the static drawings it lists.
+3. **Step controls and keyboard.** Fast reverse/forward become Step Back / Step Forward, using
+   the small triangles U+23F4 / U+23F5 (already in the bundled symbol font); the slider rows keep
+   their jump buttons. A "step" is one step in Steps mode and one trial in Trials mode. Space
+   toggles Play/Pause, handled at window level so a focused button can't swallow it. Left/Right
+   arrows step back/forward one; holding a key repeats at the system's key auto-repeat rate.
+4. **Exact slider values.** Right-click either slider to type the number of steps or trials.
+5. **Display-area right-click menu.**
+   - Wall on/off, default -30; wall position from -120 (fixed minimum) to -1. Hide the theory
+     curve while the wall is on.
+   - Legend on/off: current MEAN and sd vs. the theoretical values; disabled while the wall is on.
+   - Regenerate...: a dialog with a seed field and a P(right) slider, 0-100% in 1% steps,
+     default 50%; P(left) = 1 - P(right).
+
+### Open decisions (ask the user when the step comes up)
+
+- **Step progress in Steps mode** (step 2): with the Steps slider now marking the end, show the
+  current step by (a) the summary box counting up, e.g. "Step 137 of 250, 10000 Trials"
+  (suggested), (b) a marker on the Steps slider track, or (c) moving the handle during playback
+  and returning it to the chosen end afterwards.
+- **Trials-mode pacing** (step 2): (a) constant ~11 trials per frame, or (b) start at 1 trial per
+  frame and speed up, still ~30 s overall, so the early sparse histogram can be watched.
+- **Wall changes** (step 5): a wall changes the walks, so re-simulating is needed (~1 s). Do it
+  automatically on toggling/moving the wall, or only on Regenerate?
+- **Summary box**: whether its text follows the sliders.
+
+### Ways of working
+
+- The increments above are ticket-shaped (scope, acceptance criteria, dependencies). Steps 1 and
+  2 must go in order; after 2, steps 3-5 are independent. The user is interested in a
+  ticket/multi-agent workflow: plan tickets first; work mainly in sequence, with agents for side
+  work (code review, pytest-qt tests, docs) and possibly parallel worktrees for steps 3-4.
+  Nearly every step edits main_window.py, so parallel work risks merge conflicts.
+
+## Open items
 - Memory: `simulate_paths` at MAX_JUMPS allocates two int64 (runs, steps) arrays (~400 MB
   each).
+- Remove Drawing pulldown when no longer needed

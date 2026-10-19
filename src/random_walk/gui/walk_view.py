@@ -53,8 +53,12 @@ WALK_COLORS = ("black", "#E69F00", "#56B4E9", "#009E73", "#D55E00", "#0072B2", "
 WALK_WIDTH = 1.0  # px
 BAR_COLOR = "#d3d3d3"  # light grey histogram bars
 # Density shading runs from the background (no walks) to this grey (a step's busiest cell),
-# stopping short of black so black histogram bars stay distinct in front of it.
-DENSITY_DARKEST = "#404040"
+# stopping short of black.
+DENSITY_DARKEST = "#222222"
+# Shade = (cell's share of its step's busiest cell) ** DENSITY_GAMMA. Below 1 it lifts the
+# sparse cells (at 0.3 a cell with 5% of the peak gets 41% of the shading, not 5%), so the
+# fan's thin outer edges show while the centre stays darkest. 1 = linear.
+DENSITY_GAMMA = 0.3
 DENSITY_BIN_WIDTH = 2  # positions per density column (one even, one odd)
 DENSITY_CACHE_SIZE = 4  # density images kept (one per shown step); animation makes many
 BAR_GAP = 1.0  # px between neighbouring bars, so they stay distinct
@@ -367,6 +371,7 @@ class WalkView(QFrame):
             shade[last + 1 :] = 0  # the walks haven't got there yet
             empty = self.palette().window().color().lightness()
             darkest = QColor(DENSITY_DARKEST).lightness()
+            shade = shade**DENSITY_GAMMA  # lift the sparse cells (see DENSITY_GAMMA)
             grey = np.round(empty - shade * (empty - darkest)).astype(np.uint8)
             pixels = np.ascontiguousarray(grey[::-1])  # image rows run top-down
             height, width = pixels.shape
