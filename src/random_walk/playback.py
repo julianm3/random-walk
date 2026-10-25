@@ -112,6 +112,16 @@ class Playback:
         self.last_drawn = frame_int
         return frame_int
 
+    def seek(self, frame: float) -> None:
+        """Pause at a (clamped) fractional frame, e.g. one mapped back from another scale, so
+        playback resumes from exactly there. Counts as drawn: the next tick redraws only if
+        the frame moves on."""
+        self.playing = False
+        if self.n == 0:
+            return
+        self.frame = max(0.0, min(frame, float(self.n - 1)))
+        self.last_drawn = self.current_frame
+
     def step(self, delta: int) -> int | None:
         return self.jump_to(self.current_frame + delta)
 
@@ -137,6 +147,11 @@ class Playback:
             self.frame = 0.0
         elif direction < 0 and self.frame <= 0:
             self.frame = float(self.n - 1)
+        else:
+            return
+        # The frame drawn last was the end just left; forget it, or on a two-frame timeline
+        # reaching that end again would look already drawn and never be redrawn.
+        self.last_drawn = -1
 
     # --- speed --------------------------------------------------------------------------
 

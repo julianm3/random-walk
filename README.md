@@ -6,9 +6,10 @@ the results as a histogram and as several animations.
 
 > **The GUI is being rebuilt** in PySide6 (Qt), one step at a time. On this branch (`main`),
 > `random-walk` opens an early version: it simulates a seeded data set (10,000 walks of
-> 1000 steps) and draws it - walks, histograms and a density view, picked from a temporary
-> Drawing menu. Play animates the walks step by step, and the Steps slider scrubs through
-> them; the other controls aren't connected yet. The previous Dear
+> 1000 steps) and animates it in two modes. *Steps*: the chosen trials advance step by step
+> as a density view with the histogram of their positions. *Trials*: the histogram of final
+> positions grows trial by trial. The Steps slider scrubs, the Trials slider picks the trials;
+> fast reverse/forward aren't connected yet. The previous Dear
 > PyGui interface is on the [`ui_prototype`](https://github.com/julianm3/random-walk/tree/ui_prototype) branch
 > (tag `dpg-final`):
 >
@@ -58,6 +59,7 @@ src/random_walk/
     simulation.py    simulate, simulate_paths, summarize (numpy only)
     theory.py        mean and sd for the bias, normal and half-normal curves
     playback.py      timeline playback state (no GUI imports)
+    pacing.py        Trials mode's slow-then-fast trial counts
     cli.py           command-line entry point
     gui/             PySide6 (Qt) interface, in progress
 tests/               unit tests for the core

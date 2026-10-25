@@ -15,3 +15,4 @@ SLOW_SECONDS = 300  # "slow" condenses the whole timeline to this many seconds
 FAST_SECONDS = 30  # "fast" condenses the whole timeline to this many seconds
 FAST_BOOST = 4.0  # fast-forward/reverse: this multiple of whatever the speed slider is set to
 MIN_SPEED = 0.01  # steps/sec floor for the speed slider and presets
+TRIALS_PLAY_SECONDS = 30  # Trials mode grows the histogram to every trial in this time

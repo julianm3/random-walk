@@ -79,18 +79,18 @@ MIN_Y_TICK_SPACING = 40  # px; y labels are one line tall, so they can sit close
 
 @dataclass(frozen=True)
 class Drawing:
-    """What the drawing area shows: a density image of every walk, the first `walks` walks,
-    and/or the final-position histogram - back to front in that order, except that the
-    histogram goes in front with `histogram_in_front`. The histogram counts every trial, or
-    with `histogram_from_walks` only the walks drawn (sparse for a handful of walks), and its
-    bars are `histogram_color` at `histogram_opacity` (below 1 lets what's behind show through).
-    Walks take one colour each from WALK_COLORS, or all `walk_color` if set, at `walk_opacity`
-    (below 1, overlapping walks build up darker, like density shading)."""
+    """What the drawing area shows: a density image of the walks, the first `walks` walks,
+    and/or the histogram of positions - back to front in that order, except that the
+    histogram goes in front with `histogram_in_front`. The density and histogram count the
+    first `trials` trials (None: every trial), and the histogram's bars are `histogram_color`
+    at `histogram_opacity` (below 1 lets what's behind show through). Walks take one colour
+    each from WALK_COLORS, or all `walk_color` if set, at `walk_opacity` (below 1, overlapping
+    walks build up darker, like density shading)."""
 
     density: bool = False
     walks: int = 0
     histogram: bool = False
-    histogram_from_walks: bool = False
+    trials: int | None = None
     histogram_color: str = BAR_COLOR
     histogram_in_front: bool = False
     histogram_opacity: float = 1.0
@@ -105,8 +105,13 @@ class Drawing:
     # Make the probability axis follow the theory curve's peak continuously: its top is the peak
     # plus THEORY_HEADROOM, recomputed every frame and not rounded, with ticks at the round
     # values below it. While animating, the histogram then keeps a steady height and the tick
-    # labels slide instead - nothing jumps (rounded tops made the bars pop at each change).
+    # labels slide instead - nothing jumps (rounded tops made the bars pop at each change). A
+    # bar taller than that (few trials are noisy) raises the top to it, so none is cut off.
     probability_from_theory: bool = False
+    # Fix the probability axis to the full histogram of every trial's final position (and the
+    # theory curve), however few trials are counted: the bars grow into a still frame. Early
+    # on, with few trials, the tallest bars are cut off at the top.
+    probability_from_full: bool = False
 
 
 def x_to_screen(
@@ -179,8 +184,13 @@ class WalkView(QFrame):
         # Final-position histogram of every trial: bin centres and each bin's share.
         self._bins: NDArray[Any] = np.zeros(0)
         self._fractions: NDArray[np.float64] = np.zeros(0)
-        self._density_shade: NDArray[np.float64] | None = None  # built on first use
-        self._density_images: dict[int, QImage] = {}  # by last step shown
+        # Density shading, counted on first use for `_density_trials` trials. With
+        # `hold_density` set, the last count is kept even if the drawing asks for another
+        # number of trials (recounting takes up to ~0.1 s, too slow while a slider is dragged).
+        self._density_shade: NDArray[np.float64] | None = None
+        self._density_trials = 0
+        self.hold_density = False
+        self._density_images: dict[tuple[int, int], QImage] = {}  # by (trials, last step)
 
     def set_paths(self, paths: NDArray[np.int64], p_right: float = 0.5) -> None:
         """The data set to draw: shape (trials, steps + 1), as from simulate_paths()."""
@@ -217,14 +227,20 @@ class WalkView(QFrame):
         step = self._drawing.at_step
         return self._steps if step is None else min(max(step, 0), self._steps)
 
+    def trial_count(self) -> int:
+        """How many trials the current drawing counts (the first N of the data set)."""
+        total = 0 if self._paths is None else len(self._paths)
+        trials = self._drawing.trials
+        return total if trials is None else min(max(trials, 0), total)
+
     def histogram(self) -> tuple[NDArray[Any], NDArray[np.float64]]:
         """The current drawing's histogram: bin centres and each bin's share of the trials
-        counted (positions at the shown step; sums to 1) - every trial, or only the drawn
-        walks."""
-        d = self._drawing
-        if self._paths is None or (not d.histogram_from_walks and self.shown_step() == self._steps):
+        counted (positions at the shown step; sums to 1). Empty when no trials are counted."""
+        trials = self.trial_count()
+        if self._paths is None or trials == 0:
+            return np.zeros(0), np.zeros(0)
+        if trials == len(self._paths) and self.shown_step() == self._steps:
             return self._bins, self._fractions  # every trial's final positions, precomputed
-        trials = max(1, d.walks) if d.histogram_from_walks else len(self._paths)
         positions = self._paths[:trials, self.shown_step()]
         return fractions_at(positions, parity_bins(positions))
 
@@ -250,20 +266,24 @@ class WalkView(QFrame):
     def _probability_axis(self, full: bool = False) -> tuple[list[float], float]:
         """The probability axis for the current drawing's histogram (or with `full`, every
         trial's): its ticks and its top value. The top is usually the last tick; when following
-        the theory peak it's the peak plus headroom, with the ticks the round values below."""
-        fractions = self._fractions if full else self.histogram()[1]
-        if len(fractions) == 0:
+        the theory peak it's the peak plus headroom (or the tallest bar, if higher), with the
+        ticks the round values below."""
+        d = self._drawing
+        if full or d.probability_from_full:
+            fractions = self._fractions
+            with_curve = not full and d.theory  # (`full` is for reserving room: bars only)
+        else:
+            fractions, with_curve = self.histogram()[1], d.theory
+        highest = float(fractions.max()) if len(fractions) else 0.0
+        curve = self.theory_curve() if (with_curve or d.probability_from_theory) else None
+        if not full and d.probability_from_theory and curve is not None:
+            # (no curve at step 0 or p_right = 0 or 1: fall back to the bars)
+            top = max(float(curve[1].max()) * (1 + THEORY_HEADROOM), highest)
+            return nice_ticks(0, top, self._max_y_ticks()), top
+        if with_curve and curve is not None:  # keep the curve's peak under the top tick too
+            highest = max(highest, float(curve[1].max()))
+        if highest == 0:
             return [], 1.0
-        if not full and self._drawing.probability_from_theory:
-            curve = self.theory_curve()
-            if curve is not None:  # (none at step 0 or p_right = 0 or 1: fall back to the bars)
-                top = float(curve[1].max()) * (1 + THEORY_HEADROOM)
-                return nice_ticks(0, top, self._max_y_ticks()), top
-        highest = float(fractions.max())
-        if not full and self._drawing.theory:  # keep the curve's peak under the top tick too
-            curve = self.theory_curve()
-            if curve is not None:
-                highest = max(highest, float(curve[1].max()))
         ticks = probability_ticks(highest, self._max_y_ticks())
         return ticks, ticks[-1]
 
@@ -338,7 +358,7 @@ class WalkView(QFrame):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         # Back to front: density, histogram bars and walks (in the drawing's order), then axes.
         d = self._drawing
-        if d.density:
+        if d.density and self.trial_count() > 0:
             self._paint_density(painter)
         if d.histogram and not d.histogram_in_front:
             self._paint_histogram(painter)
@@ -355,18 +375,24 @@ class WalkView(QFrame):
         self._paint_x_axis(painter)
 
     def density_image(self) -> QImage:
-        """Every walk's position at every step as a greyscale image: one row per step (step 0
-        at the bottom), one column per DENSITY_BIN_WIDTH positions, each row shaded relative
-        to its own busiest cell; rows above the shown step are left empty. Counted once per
-        data set (~0.1 s for 10,000 walks); the last few shown steps' images are cached."""
+        """The counted walks' positions at every step as a greyscale image: one row per step
+        (step 0 at the bottom), one column per DENSITY_BIN_WIDTH positions, each row shaded
+        relative to its own busiest cell; rows above the shown step are left empty. Counted
+        once per number of trials (~0.1 s for 10,000 walks), unless `hold_density` keeps the
+        last count; the last few shown steps' images are cached."""
+        assert self._paths is not None
+        trials = self.trial_count()
+        if self._density_shade is None or (
+            trials != self._density_trials and not self.hold_density
+        ):
+            lo, hi = self._x_range
+            grid = density_grid(self._paths[:trials], lo, hi, DENSITY_BIN_WIDTH)
+            self._density_shade = normalize_rows(grid)
+            self._density_trials = trials
+            self._density_images = {}
         last = self.shown_step()
-        if last not in self._density_images:
-            assert self._paths is not None
-            if self._density_shade is None:
-                lo, hi = self._x_range
-                self._density_shade = normalize_rows(
-                    density_grid(self._paths, lo, hi, DENSITY_BIN_WIDTH)
-                )
+        key = (self._density_trials, last)
+        if key not in self._density_images:
             shade = self._density_shade.copy()
             shade[last + 1 :] = 0  # the walks haven't got there yet
             empty = self.palette().window().color().lightness()
@@ -378,8 +404,8 @@ class WalkView(QFrame):
             image = QImage(pixels.data, width, height, width, QImage.Format.Format_Grayscale8)
             if len(self._density_images) >= DENSITY_CACHE_SIZE:  # drop the oldest
                 del self._density_images[next(iter(self._density_images))]
-            self._density_images[last] = image.copy()  # own the pixels; `pixels` is temporary
-        return self._density_images[last]
+            self._density_images[key] = image.copy()  # own the pixels; `pixels` is temporary
+        return self._density_images[key]
 
     def _paint_density(self, painter: QPainter) -> None:
         image = self.density_image()

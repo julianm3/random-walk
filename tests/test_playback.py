@@ -75,6 +75,17 @@ def test_play_at_end_rewinds_to_start():
     assert pb.frame == 0.0 and pb.playing
 
 
+def test_replaying_two_frames_redraws_the_end():
+    # Regression: after rewinding from the end, reaching it again returned None (it still
+    # counted as drawn), so a 0 -> 1 animation never showed frame 1.
+    pb = Playback()
+    pb.start(2, 0.0, autoplay=False)
+    pb.finish()
+    pb.play(now=0.0)
+    assert pb.tick(0.0) == 0
+    assert pb.tick(1.0) == 1 and not pb.playing
+
+
 def test_reverse_at_start_rewinds_to_end():
     pb = started(n=11)
     pb.restart()
@@ -88,6 +99,17 @@ def test_jump_to_pauses_and_clamps():
     assert not pb.playing
     assert pb.jump_to(-3) == 0
     assert pb.last_drawn == 0
+
+
+def test_seek_keeps_fractional_frame_and_clamps():
+    pb = started(n=11)
+    pb.seek(3.4)
+    assert not pb.playing and pb.frame == 3.4 and pb.last_drawn == 3
+    assert pb.tick(1.0) is None  # already drawn
+    pb.seek(99.0)
+    assert pb.frame == 10.0
+    pb.seek(-1.0)
+    assert pb.frame == 0.0
 
 
 def test_jump_with_nothing_started_returns_none():

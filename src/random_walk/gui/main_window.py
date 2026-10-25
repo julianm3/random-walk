@@ -1,32 +1,36 @@
 """The main window, laid out after the sketches in docs/sketches (GUI_1, GUI_2, customControl):
 
     +--------------------------------------------+
-    | Drawing: [....]                Random Walk |
+    |                                Random Walk |
     | +----------------------------------------+ |
     | |                                        | |
-    | |    drawing area (grows): walks, axes   | |
+    | |   drawing area (grows): density, bars  | |
     | |                                        | |
     | +----------------------------------------+ |
-    |                  [1000 Steps, 10000 Trials]|
     |               SELECTOR_TOP_GAP             |
-    |            (*)-----( )-----( )             |
-    |            Walk   Trials   Both            |
+    |              (*)-----------( )             |
+    |             Steps         Trials           |
     |              SELECTOR_BOTTOM_GAP           |
-    |       |<< ---|--------------------- >>|    |
+    |  Steps |<< ---|--------------------- >>|   |
     |                  SLIDER_GAP                |
-    |       |<< ---|--------------------- >>|    |
+    | Trials |<< ---|--------------------- >>|   |
     |                 CONTROLS_GAP               |
     |                 <<   >/||   >>             |
     +--------------------------------------------+
 
 The drawing area takes all spare space as the window resizes. Everything below it keeps its
-size, stays centred, and keeps its spacing. At startup a data set is simulated and drawn
-(see gui/walk_view.py), in whichever drawing the drawing selector picks. Play/Pause animates
-it step by step (ANIMATION_DRAWING style, 30 steps/s) and the Steps slider shows and sets the
-current step; the selector, Trials slider and fast reverse/forward aren't connected yet.
+size, stays centred, and keeps its spacing. At startup a data set is simulated (see
+gui/walk_view.py), and the selector picks one of two animation modes on it:
 
-All text is in Source Code Pro (gui/ui_fonts.py). TEMPORARY: a drawing selector at the top
-left switches what the drawing area shows (see DRAWINGS). Remove it once the choices are made.
+- Steps: the first N trials (the Trials slider) advance from step 0 to the last step, 30
+  steps a second, drawn as a density image with the histogram of their positions in front.
+  The Steps slider is the playhead: it follows the animation and scrubs.
+- Trials: the histogram of final positions grows from 0 trials to every trial, slowly at
+  first (see pacing.py). The Trials slider follows it and scrubs; the Steps slider is locked
+  at the last step.
+
+Each mode keeps its own slider settings and playback position when switching away and back.
+Fast reverse/forward aren't connected yet. All text is in Source Code Pro (gui/ui_fonts.py).
 """
 
 from __future__ import annotations
@@ -38,8 +42,6 @@ from PySide6.QtCore import QEvent, Qt, QTimer
 from PySide6.QtGui import QColor, QEnterEvent, QFont, QFontMetrics, QPalette
 from PySide6.QtWidgets import (
     QApplication,
-    QComboBox,
-    QFrame,
     QHBoxLayout,
     QLabel,
     QMainWindow,
@@ -49,82 +51,71 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from random_walk.config import DEFAULT_P_RIGHT, DEFAULT_RUNS, DEFAULT_STEPS
+from random_walk.config import (
+    DEFAULT_P_RIGHT,
+    DEFAULT_RUNS,
+    DEFAULT_STEPS,
+    FPS,
+    TRIALS_PLAY_SECONDS,
+)
 from random_walk.gui import symbols, ui_fonts
 from random_walk.gui.position_selector import PositionSelector
-from random_walk.gui.walk_view import DENSITY_DARKEST, Drawing, WalkView
+from random_walk.gui.walk_view import Drawing, WalkView
+from random_walk.pacing import TrialRamp
 from random_walk.playback import Playback
 from random_walk.simulation import simulate_paths
 
 TITLE = "Random Walk"
-SUMMARY = "1000 Steps, 10000 Trials"  # plain text for now
 SLIDER_WIDTH = 640  # px; fixed, independent of the window width
 SLIDER_HEIGHT = 24  # px; room for the 23 px handle bar, which is clipped to the widget
+WINDOW_SPACING = 8  # px; the window layout's spacing between the title, drawing and controls
 # Vertical gaps below the drawing area, all exact (px). They share one value so the controls
-# are evenly spaced; each can still be tuned on its own. The summary box stays tied to the
-# drawing area by the window layout's 8 px spacing.
+# are evenly spaced; each can still be tuned on its own.
 CONTROL_GAP = 12
-# +6: the summary box and the circles have no internal padding (buttons and sliders do),
-# so this gap needs a little more to look the same as the others.
-SELECTOR_TOP_GAP = CONTROL_GAP + 6  # summary box -> position selector
+# +6: the drawing area's frame and the circles have no internal padding (buttons and sliders
+# do), so this gap needs a little more to look the same as the others. It includes the window
+# layout's spacing.
+SELECTOR_TOP_GAP = CONTROL_GAP + 6  # drawing area -> position selector
 SELECTOR_BOTTOM_GAP = CONTROL_GAP  # position selector -> top slider row
 SLIDER_GAP = CONTROL_GAP  # between the two slider rows
 CONTROLS_GAP = CONTROL_GAP  # second slider row -> player controls
-SELECTOR_LABELS = ("Walk", "Trials", "Both")
-# Light grey bars in front of the walks or density are drawn this opaque (0-1), so what's
-# behind them shows through.
+# The animation modes, in selector order.
+STEPS_MODE, TRIALS_MODE = 0, 1
+SELECTOR_LABELS = ("Steps", "Trials")
+# Light grey bars in front of the density are drawn this opaque (0-1), so it shows through.
 OVERLAY_BAR_OPACITY = 0.6
-# Overlay 2's walks: all in Overlay 3's density grey, translucent so overlaps build up darker.
-OVERLAY_WALK_OPACITY = 0.25
-# TEMPORARY drawing selector: menu entry -> what the drawing area shows. The first is the
-# default.
-DRAWINGS = {
-    "Draw 1": Drawing(walks=1),
-    "Draw 5": Drawing(walks=5),
-    "Full Histogram": Drawing(histogram=True, theory=True),
-    "Overlay 1": Drawing(walks=1, histogram=True),
-    "Overlay 2": Drawing(
-        walks=200,
-        histogram=True,
-        histogram_from_walks=True,
-        histogram_in_front=True,
-        histogram_opacity=OVERLAY_BAR_OPACITY,
-        walk_color=DENSITY_DARKEST,
-        walk_opacity=OVERLAY_WALK_OPACITY,
-    ),
-    "Overlay 3": Drawing(
-        density=True,
-        histogram=True,
-        histogram_in_front=True,
-        histogram_opacity=OVERLAY_BAR_OPACITY,
-        theory=True,
-    ),
-    # Overlay 3 early on: density up to step 50, histogram (and theory) of positions there.
-    "Overlay 4": Drawing(
-        density=True,
-        histogram=True,
-        histogram_in_front=True,
-        histogram_opacity=OVERLAY_BAR_OPACITY,
-        at_step=50,
-        theory=True,
-    ),
-}
+# Steps mode, at each step: the density of the counted walks up to it, with the histogram of
+# their positions there in front and the theory curve. The probability axis follows the
+# theory peak, so the bell keeps a steady height as it spreads (see Drawing).
+STEPS_DRAWING = Drawing(
+    density=True,
+    histogram=True,
+    histogram_in_front=True,
+    histogram_opacity=OVERLAY_BAR_OPACITY,
+    theory=True,
+    probability_from_theory=True,
+)
+# Trials mode: the histogram of the first trials' final positions and the theory curve, on a
+# probability axis fixed to the full histogram, so the bars grow into a still frame.
+TRIALS_DRAWING = Drawing(histogram=True, theory=True, probability_from_full=True)
+# Trials mode plays this many frames (30 s at 30 fps), adding trials slowly at first.
+TRIAL_FRAMES = TRIALS_PLAY_SECONDS * FPS
 # Play/Pause button: True shows the combined symbol (one fixed glyph); False swaps between
 # separate Play and Pause symbols. The tooltip follows the state either way.
 COMBINED_PLAY_PAUSE = True
 PLAYING_COLOR = "black"  # Play/Pause symbol colour while playing
 PAUSED_COLOR = "#8c8c8c"  # ... and while paused (mid grey); it turns black on hover
 TITLE_POINT_SIZE = 14
-SUMMARY_POINT_SIZE = 8
 SELECTOR_POINT_SIZE = 8  # position selector labels
 SLIDER_LABEL_POINT_SIZE = 8  # "Steps" / "Trials" beside the sliders
 SLIDER_LABEL_GAP = 6  # px between a slider label and its row's first button
-# Slider rows, top to bottom: (label, maximum, starting value); each runs from 0.
-SLIDER_ROWS = (("Steps", DEFAULT_STEPS, 0), ("Trials", DEFAULT_RUNS, DEFAULT_RUNS))
-SLIDER_LABELS = tuple(label for label, _, _ in SLIDER_ROWS)
-# Animation: Play steps every walk forward one step per frame (Playback's "real time", 30
-# steps a second: 1000 steps in ~33 s), drawn like this DRAWINGS entry at the current step.
-ANIMATION_DRAWING = "Overlay 4"
+# Slider rows, top to bottom: (label, minimum, maximum, starting value). Steps mode starts
+# at the last step (the whole run) with every trial taking part.
+SLIDER_ROWS = (
+    ("Steps", 0, DEFAULT_STEPS, DEFAULT_STEPS),
+    ("Trials", 0, DEFAULT_RUNS, DEFAULT_RUNS),
+)
+SLIDER_LABELS = tuple(row[0] for row in SLIDER_ROWS)
 TICK_MS = 15  # timer interval while playing; Playback paces by the clock, not by ticks
 AXIS_POINT_SIZE = 8  # drawing area's axis labels
 INITIAL_SIZE = (1000, 760)
@@ -133,6 +124,7 @@ INITIAL_SIZE = (1000, 760)
 SLIDER_DONE_COLOR = "black"
 SLIDER_TODO_COLOR = "#d3d3d3"  # light grey
 SLIDER_HANDLE_COLOR = "black"
+SLIDER_LOCKED_COLOR = "#8c8c8c"  # handle and done part of a locked (disabled) slider
 SLIDER_TRACK_WIDTH = 1  # px; thickness of the track line
 SLIDER_HANDLE_WIDTH = 4  # px
 SLIDER_HANDLE_OVERHANG = 11  # px the handle bar extends above and below the track
@@ -147,6 +139,8 @@ QSlider::handle:horizontal {{
     width: {SLIDER_HANDLE_WIDTH}px; margin: -{SLIDER_HANDLE_OVERHANG}px 0; border-radius: 1px;
     background: {SLIDER_HANDLE_COLOR}; border: none;
 }}
+QSlider::sub-page:horizontal:disabled {{ background: {SLIDER_LOCKED_COLOR}; }}
+QSlider::handle:horizontal:disabled {{ background: {SLIDER_LOCKED_COLOR}; }}
 """
 
 
@@ -159,12 +153,11 @@ class MainWindow(QMainWindow):
         central = QWidget()
         layout = QVBoxLayout(central)
         layout.setContentsMargins(24, 12, 24, 24)
-        layout.setSpacing(8)
+        layout.setSpacing(WINDOW_SPACING)
         self.setCentralWidget(central)
 
         self.title = QLabel(TITLE)
         title_row = QHBoxLayout()
-        title_row.addLayout(self._build_drawing_selector())  # TEMPORARY
         title_row.addStretch(1)
         title_row.addWidget(self.title)
         layout.addLayout(title_row)
@@ -174,19 +167,16 @@ class MainWindow(QMainWindow):
         self.drawing_area.setMinimumSize(320, 200)
         layout.addWidget(self.drawing_area, stretch=1)
 
-        self.summary = QLabel(SUMMARY)
-        self.summary.setFrameShape(QFrame.Shape.Box)
-        self.summary.setMargin(6)  # padding inside the frame
         self.position_selector = PositionSelector(SELECTOR_LABELS)
         self.slider_rows = tuple(SliderRow(*row) for row in SLIDER_ROWS)
         self.steps_slider = self.slider_rows[0].slider
+        self.trials_slider = self.slider_rows[1].slider
 
         # Everything below the drawing area goes in its own zero-spacing layout, so the gap
-        # constants are the exact gaps (the window layout would add its 8 px spacing on top).
+        # constants are the exact gaps (the window layout would add its spacing on top).
         controls = QVBoxLayout()
         controls.setSpacing(0)
-        controls.addWidget(self.summary, alignment=Qt.AlignmentFlag.AlignRight)
-        controls.addSpacing(SELECTOR_TOP_GAP)
+        controls.addSpacing(SELECTOR_TOP_GAP - WINDOW_SPACING)  # the window adds the rest
         controls.addWidget(self.position_selector, alignment=Qt.AlignmentFlag.AlignHCenter)
         controls.addSpacing(SELECTOR_BOTTOM_GAP)
         controls.addLayout(self.slider_rows[0].layout)
@@ -197,44 +187,88 @@ class MainWindow(QMainWindow):
         layout.addLayout(controls)
 
         self.apply_fonts()
-        self.set_drawing(next(iter(DRAWINGS)))
         self.generate_data()
         self._setup_animation()
 
     # --- animation ------------------------------------------------------------------------
 
     def _setup_animation(self) -> None:
-        """Playback over steps 0..DEFAULT_STEPS, driven by a timer while playing; the Steps
-        slider shows the current step and moving it jumps there."""
-        self.playback = Playback()
-        self.playback.start(DEFAULT_STEPS + 1, time.monotonic(), autoplay=False)
+        """One Playback per mode, driven by a timer while playing. Steps mode's timeline is
+        steps 0..DEFAULT_STEPS; Trials mode's is TRIAL_FRAMES frames, which `ramp` turns into
+        trial counts. Starts in Steps mode at the last step, showing the whole run."""
+        self.mode = STEPS_MODE
+        self.steps_trials = DEFAULT_RUNS  # Steps mode: the Trials slider (trials taking part)
+        self.trials_shown = 0  # Trials mode: trials in the histogram (the Trials slider)
+        now = time.monotonic()
+        self.step_playback = Playback()
+        self.step_playback.start(DEFAULT_STEPS + 1, now, autoplay=False)
+        self.step_playback.jump_to(DEFAULT_STEPS)
+        self.ramp = TrialRamp(TRIAL_FRAMES, DEFAULT_RUNS)
+        self.trial_playback = Playback()
+        self.trial_playback.start(TRIAL_FRAMES + 1, now, autoplay=False)
+
         self.timer = QTimer(self)
         self.timer.setInterval(TICK_MS)
         self.timer.timeout.connect(self._on_tick)
         self.steps_slider.valueChanged.connect(self._on_steps_slider)
+        self.trials_slider.valueChanged.connect(self._on_trials_slider)
+        # Recounting the density for a new number of trials takes up to ~0.1 s: while the
+        # Trials slider is dragged, keep the last count and recount on release.
+        self.trials_slider.sliderPressed.connect(self._hold_density)
+        self.trials_slider.sliderReleased.connect(self._release_density)
+        self.position_selector.currentIndexChanged.connect(self.set_mode)
+        self.show_step(DEFAULT_STEPS)
+
+    @property
+    def playback(self) -> Playback:
+        """The current mode's playback."""
+        return self.step_playback if self.mode == STEPS_MODE else self.trial_playback
+
+    def set_mode(self, mode: int) -> None:
+        """Switch to Steps or Trials mode (pausing), restoring that mode's sliders and frame
+        (Steps mode's playhead and trials, Trials mode's trial count). In Trials mode the
+        Steps slider is locked at the last step."""
+        if mode == self.mode:
+            return
+        if self.playing:
+            self.pause()
+        self.mode = mode
+        steps_mode = mode == STEPS_MODE
+        self.slider_rows[0].set_enabled(steps_mode)
+        if not steps_mode:
+            set_quietly(self.steps_slider, DEFAULT_STEPS)
+        set_quietly(self.trials_slider, self.steps_trials if steps_mode else self.trials_shown)
+        self._show_current_frame()  # (in Steps mode, also puts the playhead back)
 
     def show_step(self, step: int) -> None:
-        """Show the data set at `step` in the animation's drawing and move the Steps slider
-        there. The position and step axes stay still; the probability axis follows the theory
-        peak continuously (plus headroom), so the histogram keeps a steady height near the top
-        as the distribution spreads out, and the tick labels slide rather than anything jump."""
-        drawing = replace(DRAWINGS[ANIMATION_DRAWING], at_step=step, probability_from_theory=True)
+        """Steps mode: show the counted trials at `step` and move the Steps slider (the
+        playhead) there. The position and step axes stay still; the probability axis follows
+        the theory peak continuously (plus headroom, or up to the tallest bar), so the
+        histogram keeps a steady height near the top as the distribution spreads out, and the
+        tick labels slide rather than anything jump."""
+        drawing = replace(STEPS_DRAWING, at_step=step, trials=self.steps_trials)
         self.drawing_area.set_drawing(drawing)
-        # Display updates, not user choices: don't let them fire their change handlers.
-        self.drawing_selector.blockSignals(True)
-        self.drawing_selector.setCurrentText(ANIMATION_DRAWING)
-        self.drawing_selector.blockSignals(False)
-        self.steps_slider.blockSignals(True)
-        self.steps_slider.setValue(step)
-        self.steps_slider.blockSignals(False)
+        set_quietly(self.steps_slider, step)
+
+    def show_trials(self, count: int) -> None:
+        """Trials mode: show the histogram of the first `count` trials' final positions, and
+        move the Trials slider there."""
+        self.trials_shown = count
+        self.drawing_area.set_drawing(replace(TRIALS_DRAWING, trials=count))
+        set_quietly(self.trials_slider, count)
+
+    def _show_current_frame(self) -> None:
+        if self.mode == STEPS_MODE:
+            self.show_step(self.step_playback.current_frame)
+        else:
+            self.show_trials(self.ramp.count_at(self.trial_playback.frame))
 
     def play(self) -> None:
-        """Animate from the Steps slider's position (from the start again if it's at the end)."""
-        self.playback.jump_to(self.steps_slider.value())
+        """Animate the current mode from where it is (from the start again if at the end)."""
         self.playback.play(time.monotonic())  # also rewinds to the start if at the end
-        # Draw the first frame before the clock starts: the first one counts the density grid
-        # (~0.1 s), which would otherwise make Playback skip ahead to catch up.
-        self.show_step(self.playback.current_frame)
+        # Draw the first frame before the clock starts: in Steps mode it may count the density
+        # grid (~0.1 s), which would otherwise make Playback skip ahead to catch up.
+        self._show_current_frame()
         self.playback.last_time = time.monotonic()
         self.timer.start()
         self.playing = True
@@ -247,18 +281,44 @@ class MainWindow(QMainWindow):
         self._show_play_state()
 
     def _on_tick(self) -> None:
-        frame = self.playback.tick(time.monotonic())
-        if frame is not None:
-            self.show_step(frame)
-        if not self.playback.playing:  # reached the last step
+        playback = self.playback
+        frame = playback.tick(time.monotonic())
+        if self.mode == STEPS_MODE:
+            if frame is not None:
+                self.show_step(frame)
+        else:
+            count = self.ramp.count_at(playback.frame)  # several frames can share a count
+            if count != self.trials_shown:
+                self.show_trials(count)
+        if not playback.playing:  # reached the end
             self.pause()
 
     def _on_steps_slider(self, value: int) -> None:
-        """The user moved the Steps slider (or pressed its jump buttons): show that step."""
+        """The user moved the Steps slider (or pressed its jump buttons): pause and show that
+        step. Play then continues from there."""
         if self.playing:
             self.pause()
-        self.playback.jump_to(value)
+        self.step_playback.jump_to(value)
         self.show_step(value)
+
+    def _on_trials_slider(self, value: int) -> None:
+        """The user moved the Trials slider (or pressed its jump buttons): in Steps mode, how
+        many trials take part; in Trials mode, how many are in the histogram so far."""
+        if self.playing:
+            self.pause()
+        if self.mode == STEPS_MODE:
+            self.steps_trials = value
+            self.show_step(self.step_playback.current_frame)
+        else:
+            self.trial_playback.seek(self.ramp.frame_for(value))
+            self.show_trials(value)
+
+    def _hold_density(self) -> None:
+        self.drawing_area.hold_density = True
+
+    def _release_density(self) -> None:
+        self.drawing_area.hold_density = False
+        self.drawing_area.update()  # recounts for the slider's number of trials
 
     def generate_data(self) -> None:
         """Simulate the data set (the default runs and steps, no wall) and show it. The
@@ -271,7 +331,6 @@ class MainWindow(QMainWindow):
         text element's own size. The symbol buttons keep their symbol font."""
         QApplication.setFont(ui_fonts.ui_font())  # every widget without its own font
         self.title.setFont(ui_fonts.ui_font(TITLE_POINT_SIZE))
-        self.summary.setFont(ui_fonts.ui_font(SUMMARY_POINT_SIZE))
         self.position_selector.setFont(ui_fonts.ui_font(SELECTOR_POINT_SIZE))
         label_font = ui_fonts.ui_font(SLIDER_LABEL_POINT_SIZE)
         widest = max(QFontMetrics(label_font).horizontalAdvance(t) for t in SLIDER_LABELS)
@@ -279,29 +338,9 @@ class MainWindow(QMainWindow):
             row.set_label_font(label_font, widest)
         self.drawing_area.setFont(ui_fonts.ui_font(AXIS_POINT_SIZE))
 
-    def _build_drawing_selector(self) -> QHBoxLayout:
-        """TEMPORARY: a dropdown to switch between drawings of the data set (see DRAWINGS)."""
-        self.drawing_selector = QComboBox()
-        self.drawing_selector.addItems(list(DRAWINGS))
-        self.drawing_selector.setToolTip("Temporary: switch between drawings of the data set")
-        self.drawing_selector.currentTextChanged.connect(self.set_drawing)
-        row = QHBoxLayout()
-        row.addWidget(QLabel("Drawing:"))
-        row.addWidget(self.drawing_selector)
-        return row
-
-    def set_drawing(self, name: str) -> None:
-        """Show drawing `name`, a DRAWINGS entry (pausing any animation)."""
-        if getattr(self, "playing", False):
-            self.pause()
-        self.drawing_area.set_drawing(DRAWINGS[name])
-        self.drawing_selector.blockSignals(True)
-        self.drawing_selector.setCurrentText(name)
-        self.drawing_selector.blockSignals(False)
-
     def _build_player_controls(self) -> QHBoxLayout:
-        """Fast reverse, Play/Pause and fast forward, centred. Visual only for now: Play/Pause
-        toggles its symbol, nothing else happens."""
+        """Fast reverse, Play/Pause and fast forward, centred. Fast reverse/forward aren't
+        connected yet."""
         self.fast_reverse = symbol_button(symbols.FAST_REVERSE, "Fast reverse")
         self.playing = False
         self.play_pause = HoverColorButton()
@@ -342,6 +381,13 @@ class MainWindow(QMainWindow):
         return symbols.PAUSE if self.playing else symbols.PLAY
 
 
+def set_quietly(slider: QSlider, value: int) -> None:
+    """Move `slider` without firing its change handlers: a display update, not a user choice."""
+    slider.blockSignals(True)
+    slider.setValue(value)
+    slider.blockSignals(False)
+
+
 class SliderRow:
     """A fixed-size slider between jump-to-start and jump-to-end buttons, centred in its row,
     with a text label to the left.
@@ -351,14 +397,14 @@ class SliderRow:
     slider; give every row the same label width (set_label_font) to keep the rows aligned.
     """
 
-    def __init__(self, label: str, maximum: int, value: int) -> None:
+    def __init__(self, label: str, minimum: int, maximum: int, value: int) -> None:
         self.label = QLabel(label)
         self.label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         self._mirror = QWidget()  # same width as the label, on the right
         self.to_start = symbol_button(symbols.SKIP_TO_START, "Jump to start")
 
         self.slider = QSlider(Qt.Orientation.Horizontal)
-        self.slider.setRange(0, maximum)
+        self.slider.setRange(minimum, maximum)
         self.slider.setValue(value)
         self.slider.setFixedSize(SLIDER_WIDTH, SLIDER_HEIGHT)
         self.slider.setStyleSheet(SLIDER_STYLE)
@@ -380,6 +426,11 @@ class SliderRow:
         self.layout.addSpacing(SLIDER_LABEL_GAP)
         self.layout.addWidget(self._mirror)
         self.layout.addStretch(1)
+
+    def set_enabled(self, enabled: bool) -> None:
+        """Lock or unlock the slider and its jump buttons (the label stays as it is)."""
+        for widget in (self.to_start, self.slider, self.to_end):
+            widget.setEnabled(enabled)
 
     def set_label_font(self, font: QFont, width: int) -> None:
         """Set the label's font and fix the label (and its mirror) to `width` px."""
