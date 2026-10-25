@@ -25,11 +25,12 @@ gui/walk_view.py), and the selector picks one of two animation modes on it:
 - Steps: the first N trials (the Trials slider) advance from step 0 to the last step, 30
   steps a second, drawn as a density image with the histogram of their positions in front.
   The Steps slider is the playhead: it follows the animation and scrubs.
-- Trials: the histogram of final positions grows from 0 trials to every trial, slowly at
-  first (see pacing.py). The Trials slider follows it and scrubs; the Steps slider is locked
-  at the last step.
+- Trials: the histogram of the trials' positions at one step (the Steps slider; the last step
+  to start with) grows from 0 trials to every trial, slowly at first (see pacing.py). The
+  Trials slider is the playhead: it follows the animation and scrubs.
 
 Each mode keeps its own slider settings and playback position when switching away and back.
+Right-click either slider to type an exact value.
 The buttons either side of Play/Pause step back and forward: one step in Steps mode, one
 trial in Trials mode, repeating while held. Keys, whatever has focus: Space plays/pauses,
 Left/Right step (repeating while held), Home/End jump to the start/end. All text is in Source
@@ -42,7 +43,7 @@ import sys
 import time
 from dataclasses import replace
 
-from PySide6.QtCore import QEvent, QObject, Qt, QTimer
+from PySide6.QtCore import QEvent, QObject, QPoint, Qt, QTimer
 from PySide6.QtGui import QColor, QEnterEvent, QFont, QFontMetrics, QKeyEvent, QPalette
 from PySide6.QtWidgets import (
     QAbstractSpinBox,
@@ -52,6 +53,8 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMainWindow,
     QSlider,
+    QSpinBox,
+    QStyle,
     QToolButton,
     QVBoxLayout,
     QWidget,
@@ -137,6 +140,8 @@ IGNORED_WITH_MODIFIERS = (
     | Qt.KeyboardModifier.AltModifier
     | Qt.KeyboardModifier.MetaModifier
 )
+EDITOR_PADDING = 16  # px added to the widest number's width in a slider's number box
+EDITOR_GAP = 2  # px between the number box and the top of the slider
 SPI_GETKEYBOARDDELAY = 0x0016  # Windows SystemParametersInfo: the key repeat delay setting
 AXIS_POINT_SIZE = 8  # drawing area's axis labels
 INITIAL_SIZE = (1000, 760)
@@ -145,7 +150,6 @@ INITIAL_SIZE = (1000, 760)
 SLIDER_DONE_COLOR = "black"
 SLIDER_TODO_COLOR = "#d3d3d3"  # light grey
 SLIDER_HANDLE_COLOR = "black"
-SLIDER_LOCKED_COLOR = "#8c8c8c"  # handle and done part of a locked (disabled) slider
 SLIDER_TRACK_WIDTH = 1  # px; thickness of the track line
 SLIDER_HANDLE_WIDTH = 4  # px
 SLIDER_HANDLE_OVERHANG = 11  # px the handle bar extends above and below the track
@@ -160,8 +164,6 @@ QSlider::handle:horizontal {{
     width: {SLIDER_HANDLE_WIDTH}px; margin: -{SLIDER_HANDLE_OVERHANG}px 0; border-radius: 1px;
     background: {SLIDER_HANDLE_COLOR}; border: none;
 }}
-QSlider::sub-page:horizontal:disabled {{ background: {SLIDER_LOCKED_COLOR}; }}
-QSlider::handle:horizontal:disabled {{ background: {SLIDER_LOCKED_COLOR}; }}
 """
 
 
@@ -278,6 +280,7 @@ class MainWindow(QMainWindow):
         self.mode = STEPS_MODE
         self.steps_trials = DEFAULT_RUNS  # Steps mode: the Trials slider (trials taking part)
         self.trials_shown = 0  # Trials mode: trials in the histogram (the Trials slider)
+        self.trials_step = DEFAULT_STEPS  # ... and the step it counts (the Steps slider)
         now = time.monotonic()
         self.step_playback = Playback()
         self.step_playback.start(DEFAULT_STEPS + 1, now, autoplay=False)
@@ -296,7 +299,18 @@ class MainWindow(QMainWindow):
         self.trials_slider.sliderPressed.connect(self._hold_density)
         self.trials_slider.sliderReleased.connect(self._release_density)
         self.position_selector.currentIndexChanged.connect(self.set_mode)
+        for row in self.slider_rows:  # right-click: type an exact value
+            row.slider.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+            row.slider.customContextMenuRequested.connect(
+                lambda _pos, r=row: self._edit_slider_value(r)
+            )
         self.show_step(DEFAULT_STEPS)
+
+    def _edit_slider_value(self, row: SliderRow) -> None:
+        """Pause and open the row's number box: Enter moves the slider there, as if dragged."""
+        if self.playing:
+            self.pause()
+        row.edit_value()
 
     @property
     def playback(self) -> Playback:
@@ -305,19 +319,19 @@ class MainWindow(QMainWindow):
 
     def set_mode(self, mode: int) -> None:
         """Switch to Steps or Trials mode (pausing), restoring that mode's sliders and frame
-        (Steps mode's playhead and trials, Trials mode's trial count). In Trials mode the
-        Steps slider is locked at the last step."""
+        (Steps mode's playhead and trials, Trials mode's step and trial count)."""
         if mode == self.mode:
             return
         if self.playing:
             self.pause()
         self.mode = mode
-        steps_mode = mode == STEPS_MODE
-        self.slider_rows[0].set_enabled(steps_mode)
-        if not steps_mode:
-            set_quietly(self.steps_slider, DEFAULT_STEPS)
-        set_quietly(self.trials_slider, self.steps_trials if steps_mode else self.trials_shown)
-        self._show_current_frame()  # (in Steps mode, also puts the playhead back)
+        # When called from code, move the selector too (its signal then finds the mode set).
+        self.position_selector.setCurrentIndex(mode)
+        if mode == STEPS_MODE:
+            set_quietly(self.trials_slider, self.steps_trials)
+        else:
+            set_quietly(self.steps_slider, self.trials_step)
+        self._show_current_frame()  # also puts the mode's playhead back
 
     def show_step(self, step: int) -> None:
         """Steps mode: show the counted trials at `step` and move the Steps slider (the
@@ -330,10 +344,11 @@ class MainWindow(QMainWindow):
         set_quietly(self.steps_slider, step)
 
     def show_trials(self, count: int) -> None:
-        """Trials mode: show the histogram of the first `count` trials' final positions, and
-        move the Trials slider there."""
+        """Trials mode: show the histogram of the first `count` trials' positions at the
+        chosen step, and move the Trials slider (the playhead) there."""
         self.trials_shown = count
-        self.drawing_area.set_drawing(replace(TRIALS_DRAWING, trials=count))
+        drawing = replace(TRIALS_DRAWING, trials=count, at_step=self.trials_step)
+        self.drawing_area.set_drawing(drawing)
         set_quietly(self.trials_slider, count)
 
     def _show_current_frame(self) -> None:
@@ -373,12 +388,17 @@ class MainWindow(QMainWindow):
             self.pause()
 
     def _on_steps_slider(self, value: int) -> None:
-        """The user moved the Steps slider (or pressed its jump buttons): pause and show that
-        step. Play then continues from there."""
+        """The user moved the Steps slider (or pressed its jump buttons): pause and, in Steps
+        mode, show that step (Play then continues from there); in Trials mode, count the
+        trials' positions at that step."""
         if self.playing:
             self.pause()
-        self.step_playback.jump_to(value)
-        self.show_step(value)
+        if self.mode == STEPS_MODE:
+            self.step_playback.jump_to(value)
+            self.show_step(value)
+        else:
+            self.trials_step = value
+            self.show_trials(self.trials_shown)
 
     def _on_trials_slider(self, value: int) -> None:
         """The user moved the Trials slider (or pressed its jump buttons): in Steps mode, how
@@ -529,16 +549,63 @@ class SliderRow:
         self.layout.addWidget(self._mirror)
         self.layout.addStretch(1)
 
-    def set_enabled(self, enabled: bool) -> None:
-        """Lock or unlock the slider and its jump buttons (the label stays as it is)."""
-        for widget in (self.to_start, self.slider, self.to_end):
-            widget.setEnabled(enabled)
+    def edit_value(self) -> None:
+        """Open a number box just above the slider's handle (see ValueEditor)."""
+        self._editor = ValueEditor(self.slider)  # kept so Python doesn't delete it early
+        self._editor.open_over_handle()
 
     def set_label_font(self, font: QFont, width: int) -> None:
         """Set the label's font and fix the label (and its mirror) to `width` px."""
         self.label.setFont(font)
         self.label.setFixedWidth(width)
         self._mirror.setFixedWidth(width)
+
+
+class ValueEditor(QSpinBox):
+    """A small number box popped up just above a slider's handle, holding its value with the
+    text selected, so typing replaces it. Enter moves the slider to the number (as if dragged
+    there, so its handlers run); Esc or a click elsewhere closes it unchanged. It only accepts
+    numbers in the slider's range.
+
+    A Popup window: Qt closes it on any click outside and gives it the keyboard while open
+    (MainWindow's key filter leaves the keys to it).
+    """
+
+    def __init__(self, slider: QSlider) -> None:
+        super().__init__(None)
+        self.setWindowFlags(Qt.WindowType.Popup | Qt.WindowType.FramelessWindowHint)
+        self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        self._slider = slider
+        self.setRange(slider.minimum(), slider.maximum())
+        self.setValue(slider.value())
+        self.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
+        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        digits = len(str(slider.maximum()))
+        self.setFixedWidth(self.fontMetrics().horizontalAdvance("0" * digits) + EDITOR_PADDING)
+
+    def open_over_handle(self) -> None:
+        """Show centred above the slider's handle, with the number selected."""
+        slider = self._slider
+        handle = slider.style().pixelMetric(QStyle.PixelMetric.PM_SliderLength, None, slider)
+        x = handle / 2 + QStyle.sliderPositionFromValue(
+            slider.minimum(), slider.maximum(), slider.value(), slider.width() - handle
+        )
+        corner = slider.mapToGlobal(QPoint(round(x - self.width() / 2), 0))
+        self.move(corner.x(), corner.y() - self.sizeHint().height() - EDITOR_GAP)
+        self.show()
+        self.setFocus()
+        self.selectAll()
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:
+        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            self.interpretText()  # take the typed text, even if not yet committed
+            value = self.value()
+            self.close()
+            self._slider.setValue(value)
+        elif event.key() == Qt.Key.Key_Escape:
+            self.close()
+        else:
+            super().keyPressEvent(event)
 
 
 def _widest(button: QToolButton, texts: tuple[str, ...]) -> int:

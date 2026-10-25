@@ -71,19 +71,31 @@ A completely new GUI is being built incrementally in **PySide6** (Qt 6, via the
     sizing from the tallest bar alone (flickered) and rounding the theory-based top to a tick
     (bars popped ~15% at each of 23 changes). 0.18 is the smallest headroom with no clipped
     bar (worst: 17% above the curve, step 975).
-  - Trials mode (`TRIALS_DRAWING`, `show_trials()`): the Steps row is locked at 1000
-    (`SliderRow.set_enabled`, greyed via `SLIDER_LOCKED_COLOR` in SLIDER_STYLE). The Trials
-    slider is the playhead: it starts at 0, follows playback (signals blocked) and scrubs.
-    Play grows the final-position histogram to 10,000 trials in `TRIALS_PLAY_SECONDS` (30 s)
+  - Trials mode (`TRIALS_DRAWING`, `show_trials()`): the Steps slider sets the step S whose
+    positions are counted (`trials_step`, starts at 1000; v0.3.3 - it was locked at 1000
+    before, the user wanted e.g. "40 trials at 250 steps"). Moving it pauses and redraws;
+    the theory curve and axis are for step S. The Trials slider is the playhead: it starts
+    at 0, follows playback (signals blocked) and scrubs; Play always continues to 10,000
+    (the user chose this over making it an end count, which would lose the playhead).
+    Play grows the histogram to 10,000 trials in `TRIALS_PLAY_SECONDS` (30 s)
     = `TRIAL_FRAMES` (900) frames, paced by `pacing.TrialRamp` (core, tested): count(f) =
     (e^(kf) - 1)/k, k ~ 0.0042, so 1 trial a frame at first, ~600 after 10 s, ~40 a frame at
     the end (the user chose this over a constant ~11/frame). Scrubbing uses
     `Playback.seek(ramp.frame_for(k))` to resume exactly there. The probability axis is fixed
-    to the full histogram and theory peak (`probability_from_full`, 0-0.03), so early bars
-    are cut off at the top (the user's choice, as in the old prototype).
+    to the histogram of all 10,000 trials at step S and its theory peak
+    (`probability_from_full`, `WalkView._all_fractions_at`; 0-0.03 at step 1000, 0-0.055 at
+    250), so early bars are cut off at the top (the user's choice, as in the old prototype).
   - The first frame is drawn before the clock starts (it may count the density grid), so no
     steps are skipped. Density images are cached for the last `DENSITY_CACHE_SIZE` (4)
     (trials, step) pairs only.
+- Exact values (v0.3.3): right-click either slider, in either mode (it pauses), to open
+  `ValueEditor`, a frameless Popup QSpinBox (no arrows) just above the handle
+  (`EDITOR_GAP` 2 px), sized to the widest number, holding the value with the text selected.
+  Enter moves the slider there (`setValue`, so its handlers run as if dragged); Esc or a
+  click outside closes it unchanged; its validator refuses numbers out of range. While it's
+  open the key filter leaves Space/arrows/Home/End to it (focus is in its QLineEdit).
+  `SliderRow.edit_value()` opens it; `set_mode()` also moves the selector, so modes set
+  from code show there.
 - Slider labels: "Steps" (top row) and "Trials" (bottom), `SLIDER_LABELS`, 8 pt, right-aligned
   left of each row's first button. `SliderRow` mirrors the label with an equal invisible
   spacer on the right so the centred sliders don't move; both labels share the widest's
@@ -288,7 +300,8 @@ Regenerate changes only the seed and P(right).
    should update per trial in Trials mode.
 3. **Step controls and keyboard.** DONE in v0.3.2 (see "Step controls and keyboard" above),
    plus Home/End.
-4. **Exact slider values.** Right-click either slider to type the number of steps or trials.
+4. **Exact slider values.** DONE in v0.3.3 (see "Exact values" above), along with the Steps
+   slider choosing the counted step in Trials mode.
 5. **Display-area right-click menu.**
    - Wall on/off, default -30; wall position from -120 (fixed minimum) to -1. Hide the theory
      curve while the wall is on.

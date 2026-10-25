@@ -108,9 +108,9 @@ class Drawing:
     # labels slide instead - nothing jumps (rounded tops made the bars pop at each change). A
     # bar taller than that (few trials are noisy) raises the top to it, so none is cut off.
     probability_from_theory: bool = False
-    # Fix the probability axis to the full histogram of every trial's final position (and the
-    # theory curve), however few trials are counted: the bars grow into a still frame. Early
-    # on, with few trials, the tallest bars are cut off at the top.
+    # Fix the probability axis to the full histogram of every trial's position at the shown
+    # step (and the theory curve), however few trials are counted: the bars grow into a still
+    # frame. Early on, with few trials, the tallest bars are cut off at the top.
     probability_from_full: bool = False
 
 
@@ -184,6 +184,8 @@ class WalkView(QFrame):
         # Final-position histogram of every trial: bin centres and each bin's share.
         self._bins: NDArray[Any] = np.zeros(0)
         self._fractions: NDArray[np.float64] = np.zeros(0)
+        # Every trial's histogram shares at one other step: (step, shares); see _all_fractions_at.
+        self._step_fractions: tuple[int, NDArray[np.float64]] = (-1, np.zeros(0))
         # Density shading, counted on first use for `_density_trials` trials. With
         # `hold_density` set, the last count is kept even if the drawing asks for another
         # number of trials (recounting takes up to ~0.1 s, too slow while a slider is dragged).
@@ -200,6 +202,7 @@ class WalkView(QFrame):
         self._p_right = p_right  # bias the walks were simulated with, for the theory curve
         finals = paths[:, -1]
         self._bins, self._fractions = fractions_at(finals, parity_bins(finals))
+        self._step_fractions = (-1, np.zeros(0))
         self._density_shade = None
         self._density_images = {}
         self.update()
@@ -269,9 +272,10 @@ class WalkView(QFrame):
         the theory peak it's the peak plus headroom (or the tallest bar, if higher), with the
         ticks the round values below."""
         d = self._drawing
-        if full or d.probability_from_full:
-            fractions = self._fractions
-            with_curve = not full and d.theory  # (`full` is for reserving room: bars only)
+        if full:  # (for reserving room: every trial's final positions, bars only)
+            fractions, with_curve = self._fractions, False
+        elif d.probability_from_full:  # every trial at the shown step, however many counted
+            fractions, with_curve = self._all_fractions_at(self.shown_step()), d.theory
         else:
             fractions, with_curve = self.histogram()[1], d.theory
         highest = float(fractions.max()) if len(fractions) else 0.0
@@ -286,6 +290,16 @@ class WalkView(QFrame):
             return [], 1.0
         ticks = probability_ticks(highest, self._max_y_ticks())
         return ticks, ticks[-1]
+
+    def _all_fractions_at(self, step: int) -> NDArray[np.float64]:
+        """Each bin's share of every trial's position at `step` (~1 ms; the last one is kept,
+        as an animation asks for the same step on every frame)."""
+        if step == self._steps:
+            return self._fractions
+        if self._step_fractions[0] != step and self._paths is not None:
+            positions = self._paths[:, step]
+            self._step_fractions = (step, fractions_at(positions, parity_bins(positions))[1])
+        return self._step_fractions[1]
 
     def _probability_tick_values(self, full: bool = False) -> list[float]:
         return self._probability_axis(full)[0]
