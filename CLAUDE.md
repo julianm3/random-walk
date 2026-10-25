@@ -39,7 +39,20 @@ A completely new GUI is being built incrementally in **PySide6** (Qt 6, via the
   mode has its own core `Playback`, driven by one `QTimer` (`TICK_MS` 15) that runs only
   while playing; `MainWindow.playback` is the current mode's. Switching modes pauses and
   restores that mode's sliders and position (Steps: the playhead in `step_playback` and
-  `steps_trials`; Trials: `trials_shown`). Play at the end replays from the start. Fast reverse/forward are not connected yet.
+  `steps_trials`; Trials: `trials_shown`). Play at the end replays from the start.
+- Step controls and keyboard (v0.3.2). The buttons either side of Play/Pause are Step Back /
+  Step Forward (`step_by()`), keeping the ⏪/⏩ symbols (the user's choice over U+23F4/5;
+  `symbols.STEP_BACK/STEP_FORWARD`). A step is one step in Steps mode and one trial in Trials
+  mode: it moves `playhead_slider` (Steps or Trials slider), whose handler pauses and shows
+  it, so stepping while playing pauses first; it stops at the ends. Held, the buttons repeat
+  at the keyboard's delay and rate (`keyboard_repeat()`: Qt's
+  `keyboardAutoRepeatRateF`, 32/s here; the delay from Windows' SPI_GETKEYBOARDDELAY, 500 ms
+  here). Keys (`KEY_ACTIONS`): Space play/pause (repeats ignored), Left/Right step (repeat
+  while held), Home/End jump like the ⏮/⏭ buttons. `MainWindow.eventFilter`, installed on
+  the QApplication, takes them before any widget (a focused button would take Space, a
+  focused slider the arrows), swallows the releases too (a button clicks on Space release),
+  and leaves them alone with Ctrl/Alt/Meta or when a QLineEdit/QAbstractSpinBox has focus
+  (for step 4's typed values).
   - Steps mode (`STEPS_DRAWING`, `show_step()`): the Steps slider (0-1000) is the PLAYHEAD,
     as in v0.2.5: it follows playback (signals blocked), and moving it or its jump buttons
     pauses and shows that step. It starts at 1000 (the whole run); Play always runs to step
@@ -273,11 +286,8 @@ Regenerate changes only the seed and P(right).
 2. **Selector modes and slider limits.** DONE in v0.3.1 (see "Animation modes" above): Steps
    and Trials modes, summary box and temporary Drawing dropdown removed. The legend (step 5)
    should update per trial in Trials mode.
-3. **Step controls and keyboard.** Fast reverse/forward become Step Back / Step Forward, using
-   the small triangles U+23F4 / U+23F5 (already in the bundled symbol font); the slider rows keep
-   their jump buttons. A "step" is one step in Steps mode and one trial in Trials mode. Space
-   toggles Play/Pause, handled at window level so a focused button can't swallow it. Left/Right
-   arrows step back/forward one; holding a key repeats at the system's key auto-repeat rate.
+3. **Step controls and keyboard.** DONE in v0.3.2 (see "Step controls and keyboard" above),
+   plus Home/End.
 4. **Exact slider values.** Right-click either slider to type the number of steps or trials.
 5. **Display-area right-click menu.**
    - Wall on/off, default -30; wall position from -120 (fixed minimum) to -1. Hide the theory

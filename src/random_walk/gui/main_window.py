@@ -30,20 +30,26 @@ gui/walk_view.py), and the selector picks one of two animation modes on it:
   at the last step.
 
 Each mode keeps its own slider settings and playback position when switching away and back.
-Fast reverse/forward aren't connected yet. All text is in Source Code Pro (gui/ui_fonts.py).
+The buttons either side of Play/Pause step back and forward: one step in Steps mode, one
+trial in Trials mode, repeating while held. Keys, whatever has focus: Space plays/pauses,
+Left/Right step (repeating while held), Home/End jump to the start/end. All text is in Source
+Code Pro (gui/ui_fonts.py).
 """
 
 from __future__ import annotations
 
+import sys
 import time
 from dataclasses import replace
 
-from PySide6.QtCore import QEvent, Qt, QTimer
-from PySide6.QtGui import QColor, QEnterEvent, QFont, QFontMetrics, QPalette
+from PySide6.QtCore import QEvent, QObject, Qt, QTimer
+from PySide6.QtGui import QColor, QEnterEvent, QFont, QFontMetrics, QKeyEvent, QPalette
 from PySide6.QtWidgets import (
+    QAbstractSpinBox,
     QApplication,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QMainWindow,
     QSlider,
     QToolButton,
@@ -117,6 +123,21 @@ SLIDER_ROWS = (
 )
 SLIDER_LABELS = tuple(row[0] for row in SLIDER_ROWS)
 TICK_MS = 15  # timer interval while playing; Playback paces by the clock, not by ticks
+# Keyboard control, wherever the focus is (see MainWindow.eventFilter): key -> action.
+KEY_ACTIONS: dict[int, str] = {  # (QKeyEvent.key() is an int; Qt.Key is an IntEnum)
+    Qt.Key.Key_Space: "play",
+    Qt.Key.Key_Left: "back",
+    Qt.Key.Key_Right: "forward",
+    Qt.Key.Key_Home: "start",
+    Qt.Key.Key_End: "end",
+}
+# Those keys with any of these held are left alone (e.g. for future shortcuts).
+IGNORED_WITH_MODIFIERS = (
+    Qt.KeyboardModifier.ControlModifier
+    | Qt.KeyboardModifier.AltModifier
+    | Qt.KeyboardModifier.MetaModifier
+)
+SPI_GETKEYBOARDDELAY = 0x0016  # Windows SystemParametersInfo: the key repeat delay setting
 AXIS_POINT_SIZE = 8  # drawing area's axis labels
 INITIAL_SIZE = (1000, 760)
 
@@ -189,6 +210,64 @@ class MainWindow(QMainWindow):
         self.apply_fonts()
         self.generate_data()
         self._setup_animation()
+        # The keys work wherever the focus is: an application-wide filter sees each key event
+        # before any widget, so a focused button can't take Space nor a slider the arrows.
+        app = QApplication.instance()
+        if app is not None:
+            app.installEventFilter(self)
+
+    # --- keyboard -------------------------------------------------------------------------
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
+        """Handle KEY_ACTIONS keys (press and release) while this window is active, unless a
+        text or number box has the focus (it needs the keys for editing)."""
+        if (
+            event.type() in (QEvent.Type.KeyPress, QEvent.Type.KeyRelease)
+            and isinstance(event, QKeyEvent)
+            and event.key() in KEY_ACTIONS
+            and not event.modifiers() & IGNORED_WITH_MODIFIERS
+            and QApplication.activeWindow() is self
+            and not isinstance(QApplication.focusWidget(), (QLineEdit, QAbstractSpinBox))
+        ):
+            # Releases are swallowed too: a focused button clicks on the Space release.
+            if event.type() == QEvent.Type.KeyPress:
+                self._on_key(event.key(), event.isAutoRepeat())
+            return True
+        return super().eventFilter(watched, event)
+
+    def _on_key(self, key: int, repeat: bool) -> None:
+        """Held keys repeat at the system's rate; only the step keys act on the repeats."""
+        action = KEY_ACTIONS[key]
+        if action == "play":
+            if not repeat:  # holding Space shouldn't flicker between play and pause
+                self._toggle_play()
+        elif action == "start":
+            self.jump(to_end=False)
+        elif action == "end":
+            self.jump(to_end=True)
+        else:
+            self.step_by(-1 if action == "back" else 1)
+
+    @property
+    def playhead_slider(self) -> QSlider:
+        """The current mode's playhead: the Steps slider, or the Trials slider in Trials mode."""
+        return self.steps_slider if self.mode == STEPS_MODE else self.trials_slider
+
+    def step_by(self, delta: int) -> None:
+        """Pause and move `delta` steps (Steps mode) or trials (Trials mode), stopping at the
+        ends. Moving the slider shows the new frame and makes Play continue from it."""
+        if self.playing:
+            self.pause()
+        slider = self.playhead_slider
+        slider.setValue(slider.value() + delta)  # clamped to the slider's range
+
+    def jump(self, to_end: bool) -> None:
+        """Pause and jump to the start or end of the current mode, like the slider's jump
+        buttons."""
+        if self.playing:
+            self.pause()
+        slider = self.playhead_slider
+        slider.setValue(slider.maximum() if to_end else slider.minimum())
 
     # --- animation ------------------------------------------------------------------------
 
@@ -339,9 +418,16 @@ class MainWindow(QMainWindow):
         self.drawing_area.setFont(ui_fonts.ui_font(AXIS_POINT_SIZE))
 
     def _build_player_controls(self) -> QHBoxLayout:
-        """Fast reverse, Play/Pause and fast forward, centred. Fast reverse/forward aren't
-        connected yet."""
-        self.fast_reverse = symbol_button(symbols.FAST_REVERSE, "Fast reverse")
+        """Step back, Play/Pause and step forward, centred. The step buttons repeat while
+        held, at the keyboard's auto-repeat delay and rate, like holding Left/Right."""
+        delay, interval = keyboard_repeat()
+        self.step_back = symbol_button(symbols.STEP_BACK, "Step back (Left)")
+        self.step_forward = symbol_button(symbols.STEP_FORWARD, "Step forward (Right)")
+        for button, delta in ((self.step_back, -1), (self.step_forward, 1)):
+            button.setAutoRepeat(True)
+            button.setAutoRepeatDelay(delay)
+            button.setAutoRepeatInterval(interval)
+            button.clicked.connect(lambda _=False, d=delta: self.step_by(d))
         self.playing = False
         self.play_pause = HoverColorButton()
         style_symbol_button(self.play_pause, self._play_symbol(), "Play")
@@ -351,11 +437,10 @@ class MainWindow(QMainWindow):
         )
         self._show_play_state()
         self.play_pause.clicked.connect(self._toggle_play)
-        self.fast_forward = symbol_button(symbols.FAST_FORWARD, "Fast forward")
 
         row = QHBoxLayout()
         row.addStretch(1)
-        for button in (self.fast_reverse, self.play_pause, self.fast_forward):
+        for button in (self.step_back, self.play_pause, self.step_forward):
             row.addWidget(button)
         row.addStretch(1)
         return row
@@ -371,7 +456,7 @@ class MainWindow(QMainWindow):
     def _show_play_state(self) -> None:
         """Symbol, colour (black playing; grey paused, black on hover) and tooltip."""
         self.play_pause.setText(self._play_symbol())
-        self.play_pause.setToolTip("Pause" if self.playing else "Play")
+        self.play_pause.setToolTip("Pause (Space)" if self.playing else "Play (Space)")
         normal = PLAYING_COLOR if self.playing else PAUSED_COLOR
         self.play_pause.set_colors(normal, hover=PLAYING_COLOR)
 
@@ -379,6 +464,23 @@ class MainWindow(QMainWindow):
         if COMBINED_PLAY_PAUSE:
             return symbols.PLAY_PAUSE
         return symbols.PAUSE if self.playing else symbols.PLAY
+
+
+def keyboard_repeat() -> tuple[int, int]:
+    """The system's key auto-repeat as (delay before repeating, interval between repeats) in
+    ms, for buttons that should repeat like a held key. Qt reports the rate; on Windows the
+    delay is read from the system setting (0-3: 250-1000 ms), elsewhere it's 500 ms."""
+    rate = QApplication.styleHints().keyboardAutoRepeatRateF() or 30.0  # repeats a second
+    delay = 500
+    if sys.platform == "win32":
+        import ctypes
+
+        setting = ctypes.c_uint()
+        if ctypes.windll.user32.SystemParametersInfoW(
+            SPI_GETKEYBOARDDELAY, 0, ctypes.byref(setting), 0
+        ):
+            delay = 250 * (setting.value + 1)
+    return delay, max(1, round(1000 / rate))
 
 
 def set_quietly(slider: QSlider, value: int) -> None:
