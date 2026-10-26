@@ -43,6 +43,7 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import QFrame, QWidget
 
 from random_walk import theory
+from random_walk.placement import Side, legend_side
 from random_walk.simulation import (
     density_grid,
     fractions_at,
@@ -219,6 +220,7 @@ class WalkView(QFrame):
         # step (see BAR_HEADROOM).
         self._tallest_from: NDArray[np.float64] = np.zeros(0)
         self.hold_density = False
+        self._legend_side: Side = "right"  # the legend's top corner; see _paint_legend
         self._density_images: dict[tuple[int, int], QImage] = {}  # by (trials, last step)
 
     def set_paths(
@@ -445,14 +447,46 @@ class WalkView(QFrame):
         stats = legend_stats(positions, step, self._p_right)
         return legend_lines(stats, with_theory=self._wall is None)
 
+    def legend_side(self) -> Side:
+        """The top corner the legend was last drawn in ("right" until the bars crowd it)."""
+        return self._legend_side
+
+    def _legend_box(self, side: Side, width: float, height: float) -> QRectF:
+        area = self.walk_area()
+        if side == "right":
+            left = area.right() - LEGEND_INSET - width
+        else:
+            left = area.left() + LEGEND_INSET
+        return QRectF(left, area.top() + LEGEND_INSET, width, height)
+
+    def _bars_under(self, box: QRectF) -> float:
+        """How much of the histogram's bars (px^2) a box at `box` would cover."""
+        if not self._drawing.histogram:
+            return 0.0
+        bins, fractions = self.histogram()
+        if len(fractions) == 0:
+            return 0.0
+        area = self.walk_area()
+        lefts = x_to_screen(bins - 1, self._x_range, area)  # bins are 2 positions wide
+        rights = x_to_screen(bins + 1, self._x_range, area)
+        tops = np.maximum(
+            area.bottom() - fractions / self.probability_top() * area.height(), area.top()
+        )
+        widths = np.clip(np.minimum(rights, box.right()) - np.maximum(lefts, box.left()), 0, None)
+        heights = np.clip(box.bottom() - np.maximum(tops, box.top()), 0, None)
+        return float((widths * heights).sum())
+
     def _paint_legend(self, painter: QPainter, lines: list[str]) -> None:
-        """The lines in a box at the plot's top-right, over everything else in the plot."""
+        """The lines in a box at a top corner of the plot, over everything else in it: the
+        right one, or the left when the bars crowd the right but not the left (see
+        placement.legend_side), so it moves out of the way of a drifting histogram."""
         metrics = QFontMetricsF(self.font())
         width = max(metrics.horizontalAdvance(line) for line in lines) + 2 * LEGEND_PADDING
         height = metrics.height() * len(lines) + 2 * LEGEND_PADDING
-        area = self.walk_area()
-        left = area.right() - LEGEND_INSET - width
-        box = QRectF(left, area.top() + LEGEND_INSET, width, height)
+        covered_left = self._bars_under(self._legend_box("left", width, height))
+        covered_right = self._bars_under(self._legend_box("right", width, height))
+        self._legend_side = legend_side(self._legend_side, covered_left, covered_right)
+        box = self._legend_box(self._legend_side, width, height)
         background = self.palette().window().color()
         background.setAlphaF(LEGEND_OPACITY)
         painter.save()

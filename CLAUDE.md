@@ -136,8 +136,15 @@ A completely new GUI is being built incrementally in **PySide6** (Qt 6, via the
   step (Trials mode), every frame (~0.08 ms). Core: `simulation.legend_stats()` (step,
   trials = number of positions, population sd as `position_stats`; None with nothing
   counted) and `legend_lines()` ("-" for no value, never "-0.00"; number columns
-  `LEGEND_WIDTH` 8 wide, room for -1000.00 at P(right) 0%), both tested. Known: with a strong
-  bias (e.g. 90%) the histogram sits at the right edge, under the legend box.
+  `LEGEND_WIDTH` 8 wide, room for -1000.00 at P(right) 0%), both tested.
+  Side (v0.3.7, the user's request): the box starts top-right and moves to the other top
+  corner when the bars crowd its corner but not the other. Each paint measures the bars'
+  area (px^2) under a box in each corner (`WalkView._bars_under`); core
+  `placement.legend_side()` (tested) switches only if the current corner is covered and the
+  other is covered at most `SWITCH_RATIO` 0.5 as much - hysteresis, so a centred bell doesn't
+  make it flicker. Measured over whole runs: 50% and 60% never move; 90% Steps mode moves
+  twice (early, then ~step 785 as the bell drifts right); 10% once. The side carries over
+  across modes and regenerates (`WalkView.legend_side()`).
 - Regenerate (v0.3.6): "Regenerate..." at the bottom of the drawing menu, after a separator
   (`edit_regenerate`). `dialogs.RegenerateDialog` opens with the CURRENT seed and P(right):
   a Seed spin box (0 to `MAX_SEED` 2^31 - 1), and a P(right) slider 0-100 in 1% steps
@@ -261,6 +268,7 @@ for features and behaviour; don't merge it back. The original single-file app al
     │   ├── simulation.py      # simulate, simulate_paths, summarize, parity_bins (numpy only)
     │   ├── playback.py        # Playback timeline state machine (no GUI imports)
     │   ├── ticks.py           # nice_ticks(): round-number axis ticks (no GUI imports)
+    │   ├── placement.py       # legend_side(): which top corner the legend uses
     │   ├── pacing.py          # TrialRamp: Trials mode's slow-then-fast trial counts
     │   ├── cli.py             # entry point: imports the GUI lazily and runs it
     │   └── gui/               # PySide6 GUI: the only package that imports Qt
@@ -273,7 +281,7 @@ for features and behaviour; don't merge it back. The original single-file app al
     │       ├── dialogs.py     # WallDialog, RegenerateDialog (right-click menu dialogs)
     │       ├── style.py       # the shared slider style
     │       └── fonts/         # bundled fonts, each with its licence file
-    ├── tests/                 # core only: theory, simulation, params, playback, ticks, pacing
+    ├── tests/                 # core only: theory, simulation, params, playback, ticks, pacing, placement
     ├── tools/                 # font scripts: explorer (dearpygui), symbol subset builder
     │   └── fonts/             # downloaded fonts, git-ignored
     ├── docs/theory.md, docs/design-notes.md, docs/sketches/ (GUI sketches)
@@ -346,7 +354,11 @@ Bundled fonts and their licences (all fine for an MIT project; none may be sold 
 - To check the GUI visually without a window popping up, render it invisibly with the real
   Windows platform: `widget.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen)`, `show()`,
   process events, then `widget.grab().save(...)`. The `offscreen` platform has no fonts
-  (text renders as boxes) and reports no colour scheme.
+  (text renders as boxes) and reports no colour scheme. Wait ~0.3 s after a mode change
+  before grabbing: the selector's dot slides for 180 ms.
+- The README's screenshots (`docs/screenshot-steps.png`, `docs/screenshot-trials.png`, made
+  that way, default data, legend on): Steps mode at step 400; Trials mode (switched via
+  `position_selector.setCurrentIndex`) at 1,500 trials. Retake them after visible changes.
 - Behaviour of the new GUI can be compared against `ui_prototype` or the legacy app by seeding
   the generator (`random_walk.simulation._default_rng = np.random.default_rng(seed)`).
 - mypy: don't pin `python_version` to 3.11. numpy 2.5's stubs don't resolve for that target.
@@ -374,8 +386,8 @@ All five agreed steps are built. Ask the user what comes next.
 
 ### Open decisions (ask the user when the step comes up)
 
-- Legend vs. a strongly biased histogram: both sit at the top right (see "Legend"). Options
-  if it bothers the user: move the box to the emptier side automatically, or nudge it down.
+- None at the moment. (The legend vs. a biased histogram was settled in v0.3.7: the box
+  moves to the emptier top corner.)
 
 ### Ways of working
 
