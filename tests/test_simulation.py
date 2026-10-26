@@ -218,21 +218,40 @@ def test_legend_stats_with_nothing_counted():
 def test_legend_lines_align_and_format():
     lines = legend_lines(LegendStats(1000, 10_000, -0.8412, 31.2066, 0.0, 31.6228))
     assert lines == [
-        "steps    1000  trials   10000",
-        "mean    -0.84  theory    0.00",
-        "sd      31.21  theory   31.62",
+        "steps     1000  trials    10000",
+        "mean     -0.84  theory     0.00",
+        "sd       31.21  theory    31.62",
     ]
     assert len({len(line) for line in lines}) == 1  # columns line up
     zero = legend_lines(LegendStats(0, 1, -0.001, None, -0.0, 0.0))
-    assert zero[1] == "mean     0.00  theory    0.00"
-    assert (
-        legend_lines(LegendStats(5, 0, None, None, 0.0, 0.0))[2] == "sd          -  theory    0.00"
+    assert zero[1] == "mean      0.00  theory     0.00"
+    assert legend_lines(LegendStats(5, 0, None, None, 0.0, 0.0))[2] == (
+        "sd           -  theory     0.00"
     )
+
+
+def test_legend_lines_fit_a_walk_all_one_way():
+    # P(right) = 0: every walk ends at -1000 after 1000 steps; the columns must still line up.
+    lines = legend_lines(LegendStats(1000, 10_000, -1000.0, 0.0, -1000.0, 0.0))
+    assert lines[1] == "mean  -1000.00  theory -1000.00"
+    assert len({len(line) for line in lines}) == 1
+
+
+def test_legend_shows_p_right_only_when_not_half():
+    assert len(legend_lines(LegendStats(250, 40, 1.0, 2.0, 0.0, 3.0, 0.5))) == 3
+    lines = legend_lines(LegendStats(250, 40, 9.35, 6.1, 50.0, 15.49, 0.6))
+    assert lines[3] == "P(right)   60%"
+    assert lines[3].endswith("%") and len(lines[3]) == len("steps   ") + 6  # lines up with "250"
+    assert legend_lines(LegendStats(5, 1, 5.0, 0.0, 5.0, 0.0, 1.0))[3] == "P(right)  100%"
+    assert legend_lines(LegendStats(5, 1, -5.0, 0.0, -5.0, 0.0, 0.0))[3] == "P(right)    0%"
+    wall = legend_lines(LegendStats(250, 40, 9.35, 6.1, 50.0, 15.49, 0.3), with_theory=False)
+    assert wall[3] == "P(right)   30%"  # shown with the wall too: it describes the walks
+    assert legend_stats(np.array([1, 3]), 3, 0.7).p_right == 0.7
 
 
 def test_legend_lines_without_theory_for_the_wall():
     lines = legend_lines(LegendStats(250, 40, 9.35, 6.1, 0.0, 15.81), with_theory=False)
-    assert lines == ["steps     250  trials      40", "mean     9.35", "sd       6.10"]
+    assert lines == ["steps      250  trials       40", "mean      9.35", "sd        6.10"]
 
 
 def test_legend_matches_simulated_walks():

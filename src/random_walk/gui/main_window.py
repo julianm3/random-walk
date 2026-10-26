@@ -73,8 +73,9 @@ from random_walk.config import (
     TRIALS_PLAY_SECONDS,
 )
 from random_walk.gui import symbols, ui_fonts
-from random_walk.gui.dialogs import REGENERATES_NOTE, WallDialog
+from random_walk.gui.dialogs import REGENERATES_NOTE, RegenerateDialog, WallDialog
 from random_walk.gui.position_selector import PositionSelector
+from random_walk.gui.style import SLIDER_HEIGHT, SLIDER_STYLE
 from random_walk.gui.walk_view import Drawing, WalkView
 from random_walk.pacing import TrialRamp
 from random_walk.params import WalkParams
@@ -83,7 +84,6 @@ from random_walk.simulation import simulate_paths
 
 TITLE = "Random Walk"
 SLIDER_WIDTH = 640  # px; fixed, independent of the window width
-SLIDER_HEIGHT = 24  # px; room for the 23 px handle bar, which is clipped to the widget
 WINDOW_SPACING = 8  # px; the window layout's spacing between the title, drawing and controls
 # Vertical gaps below the drawing area, all exact (px). They share one value so the controls
 # are evenly spaced; each can still be tuned on its own.
@@ -152,26 +152,7 @@ EDITOR_GAP = 2  # px between the number box and the top of the slider
 SPI_GETKEYBOARDDELAY = 0x0016  # Windows SystemParametersInfo: the key repeat delay setting
 AXIS_POINT_SIZE = 8  # drawing area's axis labels
 INITIAL_SIZE = (1000, 760)
-
-# Slider track: the part left of the handle (already played) and the part right of it.
-SLIDER_DONE_COLOR = "black"
-SLIDER_TODO_COLOR = "#d3d3d3"  # light grey
-SLIDER_HANDLE_COLOR = "black"
-SLIDER_TRACK_WIDTH = 1  # px; thickness of the track line
-SLIDER_HANDLE_WIDTH = 4  # px
-SLIDER_HANDLE_OVERHANG = 11  # px the handle bar extends above and below the track
-# A style sheet replaces the native slider drawing entirely, so the handle is styled here too:
-# a thin vertical bar, like a playhead. Qt sizes it as the track plus its (negative) vertical
-# margins: 1 + 2 x 11 = 23 px tall, centred on the line.
-SLIDER_STYLE = f"""
-QSlider::groove:horizontal {{ height: {SLIDER_TRACK_WIDTH}px; background: {SLIDER_TODO_COLOR}; }}
-QSlider::sub-page:horizontal {{ background: {SLIDER_DONE_COLOR}; }}
-QSlider::add-page:horizontal {{ background: {SLIDER_TODO_COLOR}; }}
-QSlider::handle:horizontal {{
-    width: {SLIDER_HANDLE_WIDTH}px; margin: -{SLIDER_HANDLE_OVERHANG}px 0; border-radius: 1px;
-    background: {SLIDER_HANDLE_COLOR}; border: none;
-}}
-"""
+# The sliders' look (SLIDER_HEIGHT, SLIDER_STYLE) is in gui/style.py, shared with the dialogs.
 
 
 class MainWindow(QMainWindow):
@@ -473,11 +454,16 @@ class MainWindow(QMainWindow):
         legend = menu.addAction("Legend")
         legend.setCheckable(True)
         legend.setChecked(self.legend_on)
+        menu.addSeparator()
+        regenerate = menu.addAction("Regenerate...")
+        regenerate.setToolTip(REGENERATES_NOTE)
         chosen = menu.exec(self.drawing_area.mapToGlobal(pos))
         if chosen is wall:
             self.edit_wall()
         elif chosen is legend:
             self.set_legend(legend.isChecked())
+        elif chosen is regenerate:
+            self.edit_regenerate()
 
     def set_legend(self, on: bool) -> None:
         """Show or hide the legend (without theory values while the wall is on)."""
@@ -492,6 +478,16 @@ class MainWindow(QMainWindow):
         if dialog.exec() == QDialog.DialogCode.Accepted:
             enabled, position = dialog.values()
             self.regenerate(replace(self.params, wall_enabled=enabled, wall_value=position))
+
+    def edit_regenerate(self) -> None:
+        """Open the Regenerate dialog (pausing) with the current seed and P(right); OK
+        regenerates with the chosen ones, keeping the wall."""
+        if self.playing:
+            self.pause()
+        dialog = RegenerateDialog(self.params.seed, self.params.p_right, self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            seed, p_right = dialog.values()
+            self.regenerate(replace(self.params, seed=seed, p_right=p_right))
 
     def apply_fonts(self) -> None:
         """Set the interface font (Source Code Pro): the default for every widget, plus each

@@ -34,7 +34,9 @@ A completely new GUI is being built incrementally in **PySide6** (Qt 6, via the
   left of the handle, light grey (#d3d3d3) right of it, and a thin black bar handle (4 px wide,
   23 px tall = track + 2 x `SLIDER_HANDLE_OVERHANG`, the "playhead" look). The handle is
   clipped to the widget, hence SLIDER_HEIGHT = 24. A style sheet replaces native drawing, so
-  any slider styling must go in SLIDER_STYLE.
+  any slider styling must go in SLIDER_STYLE. Both live in `gui/style.py` (v0.3.6), shared
+  by the main window and the Regenerate dialog (dialogs can't import main_window: it
+  imports them).
 - Animation modes (v0.3.1), picked by the selector ("Steps", "Trials"; `set_mode()`). Each
   mode has its own core `Playback`, driven by one `QTimer` (`TICK_MS` 15) that runs only
   while playing; `MainWindow.playback` is the current mode's. Switching modes pauses and
@@ -125,13 +127,27 @@ A completely new GUI is being built incrementally in **PySide6** (Qt 6, via the
   `LEGEND_INSET` 6, `LEGEND_PADDING` 4, 1 px `LEGEND_BORDER_COLOR` #8c8c8c, window-colour
   background at `LEGEND_OPACITY` 0.85) with three monospaced lines, the step and trial
   numbers first (the user asked for them):
-      steps     250  trials      40
-      mean    -3.60  theory    0.00
-      sd      15.20  theory   15.81
-  for the counted trials at the current step (Steps mode) or the trials so far at the chosen
+      steps      250  trials       40
+      mean     -3.60  theory     0.00
+      sd       15.20  theory    15.81
+      P(right)   60%
+  (the P(right) line only when it isn't 50%, with or without the wall - the user asked for
+  it in v0.3.6; `LegendStats.p_right`), for the counted trials at the current step (Steps mode) or the trials so far at the chosen
   step (Trials mode), every frame (~0.08 ms). Core: `simulation.legend_stats()` (step,
   trials = number of positions, population sd as `position_stats`; None with nothing
-  counted) and `legend_lines()` ("-" for no value, never "-0.00"), both tested.
+  counted) and `legend_lines()` ("-" for no value, never "-0.00"; number columns
+  `LEGEND_WIDTH` 8 wide, room for -1000.00 at P(right) 0%), both tested. Known: with a strong
+  bias (e.g. 90%) the histogram sits at the right edge, under the legend box.
+- Regenerate (v0.3.6): "Regenerate..." at the bottom of the drawing menu, after a separator
+  (`edit_regenerate`). `dialogs.RegenerateDialog` opens with the CURRENT seed and P(right):
+  a Seed spin box (0 to `MAX_SEED` 2^31 - 1), and a P(right) slider 0-100 in 1% steps
+  (`P_SLIDER_WIDTH` 200 px, `SLIDER_STYLE`) between labels "P(right) 50%" and "P(left) 50%",
+  fixed to their widest text so the slider doesn't move; the grey note; OK/Cancel. OK ->
+  `regenerate(replace(params, seed=, p_right=percent / 100))` (whole percentages, so 50% is
+  exactly 0.5), keeping the wall. No "Random seed" button (the user declined it). Measured:
+  seed 7 at 60% regenerates in ~0.26 s; seed 42 at 50% without the wall gives back the
+  start-up data exactly; at 0% / 100% every walk goes straight left / right (x range
+  -1000..0 / 0..1000), the sd is 0 so the curve hides and the Steps axis follows the bars.
 - Exact values (v0.3.3): right-click either slider, in either mode (it pauses), to open
   `ValueEditor`, a frameless Popup QSpinBox (no arrows) just above the handle
   (`EDITOR_GAP` 2 px), sized to the widest number, holding the value with the text selected.
@@ -254,7 +270,8 @@ for features and behaviour; don't merge it back. The original single-file app al
     │       ├── ui_fonts.py    # the interface font (Source Code Pro)
     │       ├── position_selector.py  # PositionSelector custom widget
     │       ├── walk_view.py   # WalkView: the drawing area, plots walks
-    │       ├── dialogs.py     # WallDialog (right-click menu dialogs)
+    │       ├── dialogs.py     # WallDialog, RegenerateDialog (right-click menu dialogs)
+    │       ├── style.py       # the shared slider style
     │       └── fonts/         # bundled fonts, each with its licence file
     ├── tests/                 # core only: theory, simulation, params, playback, ticks, pacing
     ├── tools/                 # font scripts: explorer (dearpygui), symbol subset builder
@@ -351,13 +368,14 @@ Regenerate changes only the seed and P(right).
 5. **Display-area right-click menu**, split into three increments (agreed 2026-10-25):
    - v0.3.4 DONE: the menu and "Wall..." (see "Wall" above).
    - v0.3.5 DONE: the legend (see "Legend" above).
-   - v0.3.6: Regenerate...: a dialog with a seed field (default 42 = the start-up data) and a
-     P(right) slider, 0-100% in 1% steps, default 50%, labelled "P(right) 60%  P(left) 40%";
-     keeps the wall setting; goes through `MainWindow.regenerate()`.
+   - v0.3.6 DONE: Regenerate... (see "Regenerate" above).
+
+All five agreed steps are built. Ask the user what comes next.
 
 ### Open decisions (ask the user when the step comes up)
 
-- None at the moment (the wall question was settled and built in v0.3.4).
+- Legend vs. a strongly biased histogram: both sit at the top right (see "Legend"). Options
+  if it bothers the user: move the box to the emptier side automatically, or nudge it down.
 
 ### Ways of working
 

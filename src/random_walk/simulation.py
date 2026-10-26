@@ -112,10 +112,13 @@ def position_stats(positions: IntArray) -> str:
     return f"mean = {positions.mean():.2f}, sd = {positions.std():.2f}"
 
 
+LEGEND_WIDTH = 8  # characters per number column in legend_lines()
+
+
 class LegendStats(NamedTuple):
     """The step and the number of trials counted, and the measured and theoretical mean and
-    sd of their positions there (no wall). The measured ones are None when no trials are
-    counted."""
+    sd of their positions there (no wall), and the walks' P(right). The measured ones are
+    None when no trials are counted."""
 
     step: int
     trials: int
@@ -123,6 +126,7 @@ class LegendStats(NamedTuple):
     sd: float | None
     theory_mean: float
     theory_sd: float
+    p_right: float = 0.5
 
 
 def legend_stats(positions: IntArray, step: int, p_right: float) -> LegendStats:
@@ -131,33 +135,42 @@ def legend_stats(positions: IntArray, step: int, p_right: float) -> LegendStats:
     theory_mean = theory.final_mean(step, p_right)
     theory_sd = theory.final_sd(step, p_right)
     if len(positions) == 0:
-        return LegendStats(step, 0, None, None, theory_mean, theory_sd)
+        return LegendStats(step, 0, None, None, theory_mean, theory_sd, p_right)
     mean, sd = float(positions.mean()), float(positions.std())
-    return LegendStats(step, len(positions), mean, sd, theory_mean, theory_sd)
+    return LegendStats(step, len(positions), mean, sd, theory_mean, theory_sd, p_right)
 
 
 def legend_lines(stats: LegendStats, with_theory: bool = True) -> list[str]:
     """The legend's lines, columns aligned for a monospaced font:
 
-        steps     250  trials      40
-        mean    -3.60  theory    0.00
-        sd      15.20  theory   15.81
+        steps      250  trials       40
+        mean     -3.60  theory     0.00
+        sd       15.20  theory    15.81
+        P(right)   60%
 
-    Without `with_theory` (the wall is on: the theory is for no wall) the mean and sd lines
-    stop after the measured value. A measured value is '-' when nothing was counted.
-    (-0.00 shows as 0.00.)"""
+    The last line only when P(right) isn't 50%. Number columns are LEGEND_WIDTH wide: room
+    for -1000.00, the mean of 1000 steps all one way. Without `with_theory` (the wall is on:
+    the theory is for no wall) the mean and sd lines stop after the measured value. A
+    measured value is '-' when nothing was counted. (-0.00 shows as 0.00.)"""
+    width = LEGEND_WIDTH
 
     def number(value: float | None) -> str:
         if value is None:
-            return f"{'-':>7}"
-        return f"{value if round(value, 2) != 0 else 0.0:7.2f}"  # no "-0.00"
+            return f"{'-':>{width}}"
+        return f"{value if round(value, 2) != 0 else 0.0:{width}.2f}"  # no "-0.00"
 
     mean = f"{'mean':<6}{number(stats.mean)}"
     sd = f"{'sd':<6}{number(stats.sd)}"
     if with_theory:
         mean += f"  {'theory':<7}{number(stats.theory_mean)}"
         sd += f"  {'theory':<7}{number(stats.theory_sd)}"
-    return [f"{'steps':<6}{stats.step:>7}  {'trials':<7}{stats.trials:>7}", mean, sd]
+    steps = f"{'steps':<6}{stats.step:>{width}}  {'trials':<7}{stats.trials:>{width}}"
+    lines = [steps, mean, sd]
+    if stats.p_right != 0.5:
+        # Ends in the first number column's last place; whole percents (the dialog's steps).
+        percent = f"{stats.p_right * 100:.0f}%"
+        lines.append(f"{'P(right)':<8}{percent:>{6 + width - 8}}")
+    return lines
 
 
 def fractions_at(positions: IntArray, bins: IntArray) -> tuple[BinArray, FloatArray]:
