@@ -1,6 +1,6 @@
 import pytest
 
-from random_walk.config import MAX_JUMPS, MAX_STEPS
+from random_walk.config import DEFAULT_SEED, MAX_JUMPS, MAX_STEPS
 from random_walk.params import WalkParams, validate
 
 
@@ -32,6 +32,11 @@ def test_p_right_range(p_right):
 def test_wall_is_none_when_disabled():
     assert WalkParams(10, 10, False, -30, 0.5).wall is None
     assert WalkParams(10, 10, True, -30, 0.5).wall == -30
+
+
+def test_seed_defaults_and_counts_for_equality():
+    assert WalkParams(10, 10, False, -30, 0.5).seed == DEFAULT_SEED
+    assert WalkParams(10, 10, False, -30, 0.5, seed=7) != WalkParams(10, 10, False, -30, 0.5)
 
 
 def test_params_work_as_cache_key():

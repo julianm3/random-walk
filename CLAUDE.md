@@ -88,6 +88,35 @@ A completely new GUI is being built incrementally in **PySide6** (Qt 6, via the
   - The first frame is drawn before the clock starts (it may count the density grid), so no
     steps are skipped. Density images are cached for the last `DENSITY_CACHE_SIZE` (4)
     (trials, step) pairs only.
+- Wall (v0.3.4). Right-click the drawing area for a menu (`_show_drawing_menu`; for now just
+  "Wall..."). `gui/dialogs.py` `WallDialog`: "Wall on" checkbox, Position spin box
+  (`MIN_WALL` -120 to `MAX_WALL` -1, default -30; disabled while off), the grey note
+  "(Regenerates animation data)" (`REGENERATES_NOTE`, the user's wording), OK/Cancel - one
+  dialog so on + position regenerate once (the user may add more there later). No dragging
+  the wall (the user's decision). OK calls `MainWindow.regenerate(params)`: pauses, swaps
+  `self.params` (a `WalkParams`, now with `seed`), and re-simulates only if `_data_key`
+  changed (a new position while the wall is off just gets stored), with a wait cursor;
+  both modes keep their slider positions. `generate_data()` uses a fresh
+  `np.random.default_rng(params.seed)` (seed 42 = the same start-up data as before).
+  Regenerating with the wall takes ~0.53 s including the first density image.
+  - `simulate_paths` builds positions step-major and returns the transposed view (Fortran
+    order): the wall loop reads contiguous rows, 0.8 -> 0.4 s, values identical (tested
+    against a step-by-step reference); no wall stays 0.3 s (cumsum through the transposed
+    view; a contiguous copy took 0.6 s). paths[:, k] is now contiguous, so the density
+    grid dropped from ~130 to ~50 ms. The random draws (`choice`) are ~0.25 s of it; a faster
+    draw would change the seeded data, so it was left.
+  - `WalkView.set_paths(..., wall=)`: the theory curve is hidden while the wall is on; the
+    x range starts `WALL_MARGIN` (6, even so the 2-wide density columns start at the wall)
+    positions left of it; a 1 px grey (`WALL_COLOR` #8c8c8c) vertical line is drawn at
+    wall - 1, the left edge of the lowest bar (the bin centred on the wall), not through it.
+  - Probability axis without a theory curve (wall on, step 0, p = 0 or 1) in Steps mode:
+    top = the tallest bar from this step to the last x (1 + `BAR_HEADROOM` 0.05)
+    (`WalkView.tallest_from()`, a suffix max of each step's tallest bar, taken from the
+    density count - at one step every walk shares a parity, so each 2-wide cell is one
+    bin). It only shrinks as a run plays forward: no flicker, nothing cut off, the same
+    when scrubbing. The user agreed to "follow the tallest bar but only grow"; that would
+    have stuck at step 0's 100% bar, so the shrinking form was built instead (to be tuned
+    after trying it). Trials mode keeps its rule (all trials at the step).
 - Exact values (v0.3.3): right-click either slider, in either mode (it pauses), to open
   `ValueEditor`, a frameless Popup QSpinBox (no arrows) just above the handle
   (`EDITOR_GAP` 2 px), sized to the widest number, holding the value with the text selected.
@@ -167,7 +196,7 @@ A completely new GUI is being built incrementally in **PySide6** (Qt 6, via the
   reserved (the right side: the wider of the full histogram's labels and the current
   drawing's), so the plot (and every x position) is identical in every drawing.
 - Density image (Steps mode): `simulation.density_grid()` counts walks per (step, 2-wide
-  position bin) - 1001 x 130 for the default set, ~0.1 s per N, one column of paths at a time
+  position bin) - 1001 x 130 for the default set, ~50 ms per N, one column of paths at a time
   to keep memory low - and `normalize_rows()` scales each step to its own busiest cell (raw
   counts run from 10,000 at step 0 to ~275 at step 1000). `WalkView.density_image()` turns
   it into a cached greyscale QImage (background to `DENSITY_DARKEST` #222222, short of
@@ -210,6 +239,7 @@ for features and behaviour; don't merge it back. The original single-file app al
     │       ├── ui_fonts.py    # the interface font (Source Code Pro)
     │       ├── position_selector.py  # PositionSelector custom widget
     │       ├── walk_view.py   # WalkView: the drawing area, plots walks
+    │       ├── dialogs.py     # WallDialog (right-click menu dialogs)
     │       └── fonts/         # bundled fonts, each with its licence file
     ├── tests/                 # core only: theory, simulation, params, playback, ticks, pacing
     ├── tools/                 # font scripts: explorer (dearpygui), symbol subset builder
@@ -259,7 +289,8 @@ Bundled fonts and their licences (all fine for an MIT project; none may be sold 
 - At p = 0 or 1 the sd is exactly 0 (the walk is deterministic, ending at -/+STEPS), and
   `summarize()` and `WalkView.theory_curve()` hide the curve, with or without a wall.
 - Theory curve, wall: half-normal approximation, sd = sqrt(STEPS). Valid only at p = 0.5
-  (reflection principle needs a driftless walk). Hidden when p != 0.5.
+  (reflection principle needs a driftless walk). `summarize()` hides it when p != 0.5; the
+  GUI (`WalkView.theory_curve()`) hides the curve whenever the wall is on (agreed plan).
 - docs/theory.md has the derivations and the known limitations (see Open items).
 
 ## Architecture rules
@@ -302,17 +333,20 @@ Regenerate changes only the seed and P(right).
    plus Home/End.
 4. **Exact slider values.** DONE in v0.3.3 (see "Exact values" above), along with the Steps
    slider choosing the counted step in Trials mode.
-5. **Display-area right-click menu.**
-   - Wall on/off, default -30; wall position from -120 (fixed minimum) to -1. Hide the theory
-     curve while the wall is on.
-   - Legend on/off: current MEAN and sd vs. the theoretical values; disabled while the wall is on.
-   - Regenerate...: a dialog with a seed field and a P(right) slider, 0-100% in 1% steps,
-     default 50%; P(left) = 1 - P(right).
+5. **Display-area right-click menu**, split into three increments (agreed 2026-10-25):
+   - v0.3.4 DONE: the menu and "Wall..." (see "Wall" above).
+   - v0.3.5: Legend on/off (checkable menu item, OFF at start-up): a small box in the plot's
+     top-left corner, "mean  x  theory  y / sd  x  theory  y", for the counted trials at the
+     current step (Steps mode) or the trials so far at the chosen step (Trials mode), updated
+     every frame; values from a core function (tested). Greyed out and hidden while the wall
+     is on.
+   - v0.3.6: Regenerate...: a dialog with a seed field (default 42 = the start-up data) and a
+     P(right) slider, 0-100% in 1% steps, default 50%, labelled "P(right) 60%  P(left) 40%";
+     keeps the wall setting; goes through `MainWindow.regenerate()`.
 
 ### Open decisions (ask the user when the step comes up)
 
-- **Wall changes** (step 5): a wall changes the walks, so re-simulating is needed (~1 s). Do it
-  automatically on toggling/moving the wall, or only on Regenerate?
+- None at the moment (the wall question was settled and built in v0.3.4).
 
 ### Ways of working
 

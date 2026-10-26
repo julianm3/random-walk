@@ -43,15 +43,18 @@ import sys
 import time
 from dataclasses import replace
 
+import numpy as np
 from PySide6.QtCore import QEvent, QObject, QPoint, Qt, QTimer
 from PySide6.QtGui import QColor, QEnterEvent, QFont, QFontMetrics, QKeyEvent, QPalette
 from PySide6.QtWidgets import (
     QAbstractSpinBox,
     QApplication,
+    QDialog,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QMainWindow,
+    QMenu,
     QSlider,
     QSpinBox,
     QStyle,
@@ -63,14 +66,18 @@ from PySide6.QtWidgets import (
 from random_walk.config import (
     DEFAULT_P_RIGHT,
     DEFAULT_RUNS,
+    DEFAULT_SEED,
     DEFAULT_STEPS,
+    DEFAULT_WALL,
     FPS,
     TRIALS_PLAY_SECONDS,
 )
 from random_walk.gui import symbols, ui_fonts
+from random_walk.gui.dialogs import REGENERATES_NOTE, WallDialog
 from random_walk.gui.position_selector import PositionSelector
 from random_walk.gui.walk_view import Drawing, WalkView
 from random_walk.pacing import TrialRamp
+from random_walk.params import WalkParams
 from random_walk.playback import Playback
 from random_walk.simulation import simulate_paths
 
@@ -210,7 +217,13 @@ class MainWindow(QMainWindow):
         layout.addLayout(controls)
 
         self.apply_fonts()
+        # The data set's settings: the menu's dialogs change them and regenerate the data.
+        self.params = WalkParams(
+            DEFAULT_RUNS, DEFAULT_STEPS, False, DEFAULT_WALL, DEFAULT_P_RIGHT, DEFAULT_SEED
+        )
         self.generate_data()
+        self.drawing_area.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.drawing_area.customContextMenuRequested.connect(self._show_drawing_menu)
         self._setup_animation()
         # The keys work wherever the focus is: an application-wide filter sees each key event
         # before any widget, so a focused button can't take Space nor a slider the arrows.
@@ -420,10 +433,50 @@ class MainWindow(QMainWindow):
         self.drawing_area.update()  # recounts for the slider's number of trials
 
     def generate_data(self) -> None:
-        """Simulate the data set (the default runs and steps, no wall) and show it. The
-        default generator is seeded, so this gives the same data every time the app starts."""
-        self.paths = simulate_paths(DEFAULT_RUNS, DEFAULT_STEPS, wall=None, p_right=DEFAULT_P_RIGHT)
-        self.drawing_area.set_paths(self.paths, p_right=DEFAULT_P_RIGHT)
+        """Simulate the data set from `params` and give it to the drawing area. A fresh
+        generator seeded with params.seed, so equal params always give the same walks (the
+        defaults: the same data every time the app starts)."""
+        p = self.params
+        rng = np.random.default_rng(p.seed)
+        self.paths = simulate_paths(p.runs, p.steps, wall=p.wall, p_right=p.p_right, rng=rng)
+        self.drawing_area.set_paths(self.paths, p_right=p.p_right, wall=p.wall)
+
+    def regenerate(self, params: WalkParams) -> None:
+        """Switch to `params`: pause, re-simulate (~0.4 s, with a wait cursor) and redraw the
+        current frame - both modes keep their slider positions. Nothing is re-simulated if
+        the walks wouldn't change (e.g. a new wall position while the wall is off)."""
+        if self.playing:
+            self.pause()
+        old, self.params = self.params, params
+        if _data_key(params) == _data_key(old):
+            return
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            self.generate_data()
+            self._show_current_frame()
+            self.drawing_area.repaint()  # count the density now, under the wait cursor
+        finally:
+            QApplication.restoreOverrideCursor()
+
+    # --- drawing area menu ----------------------------------------------------------------
+
+    def _show_drawing_menu(self, pos: QPoint) -> None:
+        """Right-click on the drawing area: the data set's settings."""
+        menu = QMenu(self)
+        wall = menu.addAction("Wall...")
+        wall.setToolTip(REGENERATES_NOTE)
+        chosen = menu.exec(self.drawing_area.mapToGlobal(pos))
+        if chosen is wall:
+            self.edit_wall()
+
+    def edit_wall(self) -> None:
+        """Open the Wall dialog (pausing); OK regenerates with the chosen wall."""
+        if self.playing:
+            self.pause()
+        dialog = WallDialog(self.params.wall_enabled, self.params.wall_value, self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            enabled, position = dialog.values()
+            self.regenerate(replace(self.params, wall_enabled=enabled, wall_value=position))
 
     def apply_fonts(self) -> None:
         """Set the interface font (Source Code Pro): the default for every widget, plus each
@@ -501,6 +554,11 @@ def keyboard_repeat() -> tuple[int, int]:
         ):
             delay = 250 * (setting.value + 1)
     return delay, max(1, round(1000 / rate))
+
+
+def _data_key(params: WalkParams) -> tuple[object, ...]:
+    """What the simulated walks depend on: equal keys give equal data."""
+    return (params.runs, params.steps, params.wall, params.p_right, params.seed)
 
 
 def set_quietly(slider: QSlider, value: int) -> None:

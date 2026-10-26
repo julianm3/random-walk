@@ -70,17 +70,27 @@ def simulate_paths(
     Shape (runs, steps + 1): column 0 is the starting position (always 0), column k is the
     position after k steps - so paths[:, -1] is exactly what simulate() would have returned
     from an identically seeded `rng`.
+
+    Built step-major - each step's positions for every run side by side in memory - and
+    returned as a transposed view (Fortran order). The wall's step-by-step loop then works
+    on contiguous rows: ~0.4 s instead of ~0.8 s for 10,000 x 1000, with identical values.
+    Reading one step for every run (paths[:, k], as the density grid and histograms do) is
+    contiguous too.
     """
     jumps = _jumps(runs, steps, p_right, rng)
-    paths = np.zeros((runs, steps + 1), dtype=np.int64)
+    positions = np.zeros((steps + 1, runs), dtype=np.int64)
     if wall is None:
-        np.cumsum(jumps, axis=1, out=paths[:, 1:])
+        # (Summing the transposed view is fastest here, ~0.3 s; a contiguous copy took 0.6.)
+        np.cumsum(jumps.T, axis=0, out=positions[1:])
     else:
+        by_step = np.ascontiguousarray(jumps.T)  # (steps, runs): each step's jumps together
         for i in range(steps):
-            paths[:, i + 1] = paths[:, i] + jumps[:, i]
-            np.abs(paths[:, i + 1] - wall, out=paths[:, i + 1])
-            paths[:, i + 1] += wall
-    return paths
+            row = positions[i + 1]
+            np.add(positions[i], by_step[i], out=row)
+            np.subtract(row, wall, out=row)  # fold anything below the wall back above it
+            np.abs(row, out=row)
+            np.add(row, wall, out=row)
+    return positions.T
 
 
 def parity_bins(values: IntArray) -> IntArray:

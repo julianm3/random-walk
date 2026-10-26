@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from random_walk.config import MAX_JUMPS, MAX_STEPS
+from random_walk.config import DEFAULT_SEED, MAX_JUMPS, MAX_STEPS
 
 
 @dataclass(frozen=True)
@@ -20,6 +20,7 @@ class WalkParams:
     wall_enabled: bool
     wall_value: int
     p_right: float
+    seed: int = DEFAULT_SEED  # the random generator's seed: equal params give equal walks
 
     @property
     def wall(self) -> int | None:

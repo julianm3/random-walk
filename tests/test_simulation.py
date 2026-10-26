@@ -93,6 +93,20 @@ def test_positions_never_fall_below_wall(wall, p_right):
     assert paths.min() >= wall
 
 
+@pytest.mark.parametrize("wall", [None, -3, 0, 2])
+@pytest.mark.parametrize("p_right", [0.5, 0.3])
+def test_paths_match_a_step_by_step_reference(wall, p_right):
+    # simulate_paths builds the array step-major for speed; every position must still follow
+    # the plain rule: add the jump, then mirror anything below the wall back above it.
+    jumps = np.random.default_rng(5).choice([-1, 1], size=(40, 30), p=[1 - p_right, p_right])
+    expected = np.zeros((40, 31), dtype=np.int64)
+    for k in range(30):
+        nxt = expected[:, k] + jumps[:, k]
+        expected[:, k + 1] = nxt if wall is None else np.where(nxt < wall, 2 * wall - nxt, nxt)
+    paths = simulate_paths(40, 30, wall=wall, p_right=p_right, rng=rng(5))
+    np.testing.assert_array_equal(paths, expected)
+
+
 def test_wall_above_start_is_crossed_on_the_first_step():
     # The walk starts at 0, below a positive wall; every position after step 0 is above it.
     paths = simulate_paths(500, 50, wall=3, rng=rng())

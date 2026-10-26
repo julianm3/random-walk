@@ -69,6 +69,14 @@ THEORY_SAMPLES = 400  # points along the curve
 # curve (up to 17% above it in the default data, at step 975), so this keeps them under
 # the top. The peak then sits at a steady 1 / 1.18 = 85% of the axis height.
 THEORY_HEADROOM = 0.18
+# Without a theory curve to follow (the wall is on, step 0, or p = 0 or 1), the probability
+# axis top at each step is the tallest bar from that step to the end of the run, plus this:
+# it only shrinks as the run plays forward, so nothing is cut off and nothing flickers.
+BAR_HEADROOM = 0.05
+WALL_COLOR = "#8c8c8c"  # mid grey vertical line marking the reflecting wall
+WALL_WIDTH = 1.0  # px
+WALL_MARGIN = 6  # positions shown left of the wall: clear of the step axis; even, so the
+# density columns (2 positions each) start at the wall rather than straddling its line
 AXIS_COLOR = "black"
 AXIS_WIDTH = 1.0  # px; axis lines and ticks
 TICK_LENGTH = 5  # px; ticks point outwards from the plot
@@ -180,6 +188,7 @@ class WalkView(QFrame):
         self._x_range = (0, 0)
         self._steps = 0
         self._p_right = 0.5
+        self._wall: int | None = None  # the reflecting wall the walks were simulated with
         self._drawing = Drawing(walks=1)
         # Final-position histogram of every trial: bin centres and each bin's share.
         self._bins: NDArray[Any] = np.zeros(0)
@@ -191,15 +200,24 @@ class WalkView(QFrame):
         # number of trials (recounting takes up to ~0.1 s, too slow while a slider is dragged).
         self._density_shade: NDArray[np.float64] | None = None
         self._density_trials = 0
+        # From the same count: for each step, the tallest bar's share from there to the last
+        # step (see BAR_HEADROOM).
+        self._tallest_from: NDArray[np.float64] = np.zeros(0)
         self.hold_density = False
         self._density_images: dict[tuple[int, int], QImage] = {}  # by (trials, last step)
 
-    def set_paths(self, paths: NDArray[np.int64], p_right: float = 0.5) -> None:
-        """The data set to draw: shape (trials, steps + 1), as from simulate_paths()."""
+    def set_paths(
+        self, paths: NDArray[np.int64], p_right: float = 0.5, wall: int | None = None
+    ) -> None:
+        """The data set to draw: shape (trials, steps + 1), as from simulate_paths(), with
+        the bias and wall it was simulated with (for the theory curve and the wall line).
+        With a wall the theory curve is hidden, and the x range starts just left of it."""
         self._paths = paths
-        self._x_range = (int(paths.min()), int(paths.max()))
+        lo = int(paths.min()) if wall is None else min(int(paths.min()), wall - WALL_MARGIN)
+        self._x_range = (lo, int(paths.max()))
         self._steps = paths.shape[1] - 1
-        self._p_right = p_right  # bias the walks were simulated with, for the theory curve
+        self._p_right = p_right
+        self._wall = wall
         finals = paths[:, -1]
         self._bins, self._fractions = fractions_at(finals, parity_bins(finals))
         self._step_fractions = (-1, np.zeros(0))
@@ -280,10 +298,15 @@ class WalkView(QFrame):
             fractions, with_curve = self.histogram()[1], d.theory
         highest = float(fractions.max()) if len(fractions) else 0.0
         curve = self.theory_curve() if (with_curve or d.probability_from_theory) else None
-        if not full and d.probability_from_theory and curve is not None:
-            # (no curve at step 0 or p_right = 0 or 1: fall back to the bars)
-            top = max(float(curve[1].max()) * (1 + THEORY_HEADROOM), highest)
-            return nice_ticks(0, top, self._max_y_ticks()), top
+        if not full and d.probability_from_theory:
+            if curve is not None:
+                top = max(float(curve[1].max()) * (1 + THEORY_HEADROOM), highest)
+            else:  # (wall on, step 0, or p = 0 or 1: follow the bars, see BAR_HEADROOM)
+                tallest = self.tallest_from()
+                top = max(float(tallest[self.shown_step()]) if len(tallest) else 0.0, highest)
+                top *= 1 + BAR_HEADROOM
+            if top > 0:
+                return nice_ticks(0, top, self._max_y_ticks()), top
         if with_curve and curve is not None:  # keep the curve's peak under the top tick too
             highest = max(highest, float(curve[1].max()))
         if highest == 0:
@@ -311,7 +334,11 @@ class WalkView(QFrame):
     def theory_curve(self) -> tuple[NDArray[np.float64], NDArray[np.float64]] | None:
         """The theoretical chance of a walk ending in each width-2 bin, at the shown step: the
         normal density (mean n(2p - 1), sd sqrt(4p(1 - p) n)) times the bin width, as
-        (positions, probabilities) across the x range. None when the sd is 0 (p = 0 or 1)."""
+        (positions, probabilities) across the x range. None when the sd is 0 (p = 0 or 1) or
+        the wall is on (a biased walk off a wall has no simple curve, and the half-normal
+        misfits a wall away from the start; see docs/theory.md)."""
+        if self._wall is not None:
+            return None
         n = self.shown_step()
         sd = theory.final_sd(n, self._p_right)
         if sd == 0:
@@ -382,6 +409,8 @@ class WalkView(QFrame):
             self._paint_histogram(painter)
         if d.histogram and d.theory:
             self._paint_theory(painter)
+        if self._wall is not None:
+            self._paint_wall(painter)
         if self._drawing.histogram:
             self._paint_probability_axis(painter)
         if self._shows_steps():
@@ -394,20 +423,11 @@ class WalkView(QFrame):
         relative to its own busiest cell; rows above the shown step are left empty. Counted
         once per number of trials (~0.1 s for 10,000 walks), unless `hold_density` keeps the
         last count; the last few shown steps' images are cached."""
-        assert self._paths is not None
-        trials = self.trial_count()
-        if self._density_shade is None or (
-            trials != self._density_trials and not self.hold_density
-        ):
-            lo, hi = self._x_range
-            grid = density_grid(self._paths[:trials], lo, hi, DENSITY_BIN_WIDTH)
-            self._density_shade = normalize_rows(grid)
-            self._density_trials = trials
-            self._density_images = {}
+        shade = self._density_counted()
         last = self.shown_step()
         key = (self._density_trials, last)
         if key not in self._density_images:
-            shade = self._density_shade.copy()
+            shade = shade.copy()
             shade[last + 1 :] = 0  # the walks haven't got there yet
             empty = self.palette().window().color().lightness()
             darkest = QColor(DENSITY_DARKEST).lightness()
@@ -420,6 +440,45 @@ class WalkView(QFrame):
                 del self._density_images[next(iter(self._density_images))]
             self._density_images[key] = image.copy()  # own the pixels; `pixels` is temporary
         return self._density_images[key]
+
+    def _density_counted(self) -> NDArray[np.float64]:
+        """The density shading for the counted trials, counting them first if needed (unless
+        `hold_density` keeps the last count). The count also gives each step's tallest bar:
+        at any one step every walk shares a parity, so each width-2 density cell holds one
+        histogram bin."""
+        assert self._paths is not None
+        trials = self.trial_count()
+        if self._density_shade is None or (
+            trials != self._density_trials and not self.hold_density
+        ):
+            lo, hi = self._x_range
+            grid = density_grid(self._paths[:trials], lo, hi, DENSITY_BIN_WIDTH)
+            self._density_shade = normalize_rows(grid)
+            self._density_trials = trials
+            self._density_images = {}
+            tallest = grid.max(axis=1) / max(trials, 1)
+            self._tallest_from = np.maximum.accumulate(tallest[::-1])[::-1]
+        return self._density_shade
+
+    def tallest_from(self) -> NDArray[np.float64]:
+        """For each step, the tallest histogram bar's share (of the counted trials) from that
+        step to the last."""
+        if self._paths is None:
+            return np.zeros(0)
+        self._density_counted()
+        return self._tallest_from
+
+    def _paint_wall(self, painter: QPainter) -> None:
+        """A vertical line just left of the lowest bar a walk can reach (the bin centred on
+        the wall spans wall - 1 to wall + 1), so it bounds the bars without cutting one."""
+        assert self._wall is not None
+        area = self.walk_area()
+        x = float(x_to_screen(self._wall - 1, self._x_range, area))
+        painter.save()
+        painter.setClipRect(area)
+        painter.setPen(QPen(QColor(WALL_COLOR), WALL_WIDTH))
+        painter.drawLine(QPointF(x, area.top()), QPointF(x, area.bottom()))
+        painter.restore()
 
     def _paint_density(self, painter: QPainter) -> None:
         image = self.density_image()
