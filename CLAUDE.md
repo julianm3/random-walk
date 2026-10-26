@@ -117,6 +117,21 @@ A completely new GUI is being built incrementally in **PySide6** (Qt 6, via the
     when scrubbing. The user agreed to "follow the tallest bar but only grow"; that would
     have stuck at step 0's 100% bar, so the shrinking form was built instead (to be tuned
     after trying it). Trials mode keeps its rule (all trials at the step).
+- Legend (v0.3.5): checkable "Legend" in the drawing menu (`set_legend`, `legend_on`, OFF at
+  start-up). With the wall on it still shows steps, trials, mean and sd, but no theory
+  values (`legend_lines(..., with_theory=False)`; the theory is for no wall) - the user's
+  choice, replacing the plan's "greyed out and hidden while the wall is on".
+  `Drawing.legend` draws a box at the plot's top-RIGHT (the user moved it from top-left;
+  `LEGEND_INSET` 6, `LEGEND_PADDING` 4, 1 px `LEGEND_BORDER_COLOR` #8c8c8c, window-colour
+  background at `LEGEND_OPACITY` 0.85) with three monospaced lines, the step and trial
+  numbers first (the user asked for them):
+      steps     250  trials      40
+      mean    -3.60  theory    0.00
+      sd      15.20  theory   15.81
+  for the counted trials at the current step (Steps mode) or the trials so far at the chosen
+  step (Trials mode), every frame (~0.08 ms). Core: `simulation.legend_stats()` (step,
+  trials = number of positions, population sd as `position_stats`; None with nothing
+  counted) and `legend_lines()` ("-" for no value, never "-0.00"), both tested.
 - Exact values (v0.3.3): right-click either slider, in either mode (it pauses), to open
   `ValueEditor`, a frameless Popup QSpinBox (no arrows) just above the handle
   (`EDITOR_GAP` 2 px), sized to the widest number, holding the value with the text selected.
@@ -335,11 +350,7 @@ Regenerate changes only the seed and P(right).
    slider choosing the counted step in Trials mode.
 5. **Display-area right-click menu**, split into three increments (agreed 2026-10-25):
    - v0.3.4 DONE: the menu and "Wall..." (see "Wall" above).
-   - v0.3.5: Legend on/off (checkable menu item, OFF at start-up): a small box in the plot's
-     top-left corner, "mean  x  theory  y / sd  x  theory  y", for the counted trials at the
-     current step (Steps mode) or the trials so far at the chosen step (Trials mode), updated
-     every frame; values from a core function (tested). Greyed out and hidden while the wall
-     is on.
+   - v0.3.5 DONE: the legend (see "Legend" above).
    - v0.3.6: Regenerate...: a dialog with a seed field (default 42 = the start-up data) and a
      P(right) slider, 0-100% in 1% steps, default 50%, labelled "P(right) 60%  P(left) 40%";
      keeps the wall setting; goes through `MainWindow.regenerate()`.

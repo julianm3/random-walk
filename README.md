@@ -10,7 +10,7 @@ the results as a histogram and as several animations.
 > as a density view with the histogram of their positions; the Steps slider scrubs and the
 > Trials slider picks the trials. *Trials*: the histogram of positions at a chosen step grows
 > trial by trial; the Trials slider scrubs. Right-click a slider to type an exact value, or
-> the drawing to turn on a reflecting wall; the
+> the drawing to turn on a reflecting wall or a legend (mean and sd vs. theory); the
 > buttons and keys (Space, Left/Right, Home/End) play, pause and step. The previous Dear
 > PyGui interface is on the [`ui_prototype`](https://github.com/julianm3/random-walk/tree/ui_prototype) branch
 > (tag `dpg-final`):

@@ -294,6 +294,7 @@ class MainWindow(QMainWindow):
         self.steps_trials = DEFAULT_RUNS  # Steps mode: the Trials slider (trials taking part)
         self.trials_shown = 0  # Trials mode: trials in the histogram (the Trials slider)
         self.trials_step = DEFAULT_STEPS  # ... and the step it counts (the Steps slider)
+        self.legend_on = False  # the legend (right-click menu), in both modes; off at start
         now = time.monotonic()
         self.step_playback = Playback()
         self.step_playback.start(DEFAULT_STEPS + 1, now, autoplay=False)
@@ -352,7 +353,9 @@ class MainWindow(QMainWindow):
         the theory peak continuously (plus headroom, or up to the tallest bar), so the
         histogram keeps a steady height near the top as the distribution spreads out, and the
         tick labels slide rather than anything jump."""
-        drawing = replace(STEPS_DRAWING, at_step=step, trials=self.steps_trials)
+        drawing = replace(
+            STEPS_DRAWING, at_step=step, trials=self.steps_trials, legend=self.legend_on
+        )
         self.drawing_area.set_drawing(drawing)
         set_quietly(self.steps_slider, step)
 
@@ -360,7 +363,9 @@ class MainWindow(QMainWindow):
         """Trials mode: show the histogram of the first `count` trials' positions at the
         chosen step, and move the Trials slider (the playhead) there."""
         self.trials_shown = count
-        drawing = replace(TRIALS_DRAWING, trials=count, at_step=self.trials_step)
+        drawing = replace(
+            TRIALS_DRAWING, trials=count, at_step=self.trials_step, legend=self.legend_on
+        )
         self.drawing_area.set_drawing(drawing)
         set_quietly(self.trials_slider, count)
 
@@ -461,13 +466,23 @@ class MainWindow(QMainWindow):
     # --- drawing area menu ----------------------------------------------------------------
 
     def _show_drawing_menu(self, pos: QPoint) -> None:
-        """Right-click on the drawing area: the data set's settings."""
+        """Right-click on the drawing area: the data set's settings and the legend."""
         menu = QMenu(self)
         wall = menu.addAction("Wall...")
         wall.setToolTip(REGENERATES_NOTE)
+        legend = menu.addAction("Legend")
+        legend.setCheckable(True)
+        legend.setChecked(self.legend_on)
         chosen = menu.exec(self.drawing_area.mapToGlobal(pos))
         if chosen is wall:
             self.edit_wall()
+        elif chosen is legend:
+            self.set_legend(legend.isChecked())
+
+    def set_legend(self, on: bool) -> None:
+        """Show or hide the legend (without theory values while the wall is on)."""
+        self.legend_on = on
+        self._show_current_frame()
 
     def edit_wall(self) -> None:
         """Open the Wall dialog (pausing); OK regenerates with the chosen wall."""

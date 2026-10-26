@@ -112,6 +112,54 @@ def position_stats(positions: IntArray) -> str:
     return f"mean = {positions.mean():.2f}, sd = {positions.std():.2f}"
 
 
+class LegendStats(NamedTuple):
+    """The step and the number of trials counted, and the measured and theoretical mean and
+    sd of their positions there (no wall). The measured ones are None when no trials are
+    counted."""
+
+    step: int
+    trials: int
+    mean: float | None
+    sd: float | None
+    theory_mean: float
+    theory_sd: float
+
+
+def legend_stats(positions: IntArray, step: int, p_right: float) -> LegendStats:
+    """Mean and sd (population, as position_stats) of `positions` - every counted walk at
+    `step` - beside the theory for that step: mean step(2p - 1), sd sqrt(4p(1 - p) step)."""
+    theory_mean = theory.final_mean(step, p_right)
+    theory_sd = theory.final_sd(step, p_right)
+    if len(positions) == 0:
+        return LegendStats(step, 0, None, None, theory_mean, theory_sd)
+    mean, sd = float(positions.mean()), float(positions.std())
+    return LegendStats(step, len(positions), mean, sd, theory_mean, theory_sd)
+
+
+def legend_lines(stats: LegendStats, with_theory: bool = True) -> list[str]:
+    """The legend's lines, columns aligned for a monospaced font:
+
+        steps     250  trials      40
+        mean    -3.60  theory    0.00
+        sd      15.20  theory   15.81
+
+    Without `with_theory` (the wall is on: the theory is for no wall) the mean and sd lines
+    stop after the measured value. A measured value is '-' when nothing was counted.
+    (-0.00 shows as 0.00.)"""
+
+    def number(value: float | None) -> str:
+        if value is None:
+            return f"{'-':>7}"
+        return f"{value if round(value, 2) != 0 else 0.0:7.2f}"  # no "-0.00"
+
+    mean = f"{'mean':<6}{number(stats.mean)}"
+    sd = f"{'sd':<6}{number(stats.sd)}"
+    if with_theory:
+        mean += f"  {'theory':<7}{number(stats.theory_mean)}"
+        sd += f"  {'theory':<7}{number(stats.theory_sd)}"
+    return [f"{'steps':<6}{stats.step:>7}  {'trials':<7}{stats.trials:>7}", mean, sd]
+
+
 def fractions_at(positions: IntArray, bins: IntArray) -> tuple[BinArray, FloatArray]:
     """Bin centres and each bin's share of `positions` (raw fractions summing to 1.0)."""
     counts, edges = np.histogram(positions, bins=bins)

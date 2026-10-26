@@ -2,8 +2,11 @@ import numpy as np
 import pytest
 
 from random_walk.simulation import (
+    LegendStats,
     density_grid,
     fractions_at,
+    legend_lines,
+    legend_stats,
     normalize_rows,
     parity_bins,
     simulate,
@@ -195,6 +198,48 @@ def test_summarize_stats_line():
     assert s.stats == "mean = 0.00, sd = 1.63 (theory: 0.00, 1.41), min = -2, max = 2"
     wall_stats = summarize(finals, 2, wall_enabled=True, wall_value=-2).stats
     assert wall_stats == "mean = 0.00, sd = 1.63, min = -2, max = 2"
+
+
+def test_legend_stats_measure_and_compare_with_theory():
+    s = legend_stats(np.array([-2, 0, 2, 4]), step=4, p_right=0.75)
+    assert s.step == 4 and s.trials == 4
+    assert s.mean == pytest.approx(1.0)
+    assert s.sd == pytest.approx(np.sqrt(5))  # population sd, as position_stats
+    assert s.theory_mean == pytest.approx(2.0)  # 4 * (2 * 0.75 - 1)
+    assert s.theory_sd == pytest.approx(np.sqrt(3))  # sqrt(4 * 0.75 * 0.25 * 4)
+
+
+def test_legend_stats_with_nothing_counted():
+    s = legend_stats(np.array([], dtype=np.int64), step=100, p_right=0.5)
+    assert s.trials == 0 and s.mean is None and s.sd is None
+    assert s.theory_mean == 0 and s.theory_sd == pytest.approx(10.0)
+
+
+def test_legend_lines_align_and_format():
+    lines = legend_lines(LegendStats(1000, 10_000, -0.8412, 31.2066, 0.0, 31.6228))
+    assert lines == [
+        "steps    1000  trials   10000",
+        "mean    -0.84  theory    0.00",
+        "sd      31.21  theory   31.62",
+    ]
+    assert len({len(line) for line in lines}) == 1  # columns line up
+    zero = legend_lines(LegendStats(0, 1, -0.001, None, -0.0, 0.0))
+    assert zero[1] == "mean     0.00  theory    0.00"
+    assert (
+        legend_lines(LegendStats(5, 0, None, None, 0.0, 0.0))[2] == "sd          -  theory    0.00"
+    )
+
+
+def test_legend_lines_without_theory_for_the_wall():
+    lines = legend_lines(LegendStats(250, 40, 9.35, 6.1, 0.0, 15.81), with_theory=False)
+    assert lines == ["steps     250  trials      40", "mean     9.35", "sd       6.10"]
+
+
+def test_legend_matches_simulated_walks():
+    finals = simulate(20_000, 400, wall=None, p_right=0.6, rng=rng())
+    s = legend_stats(finals, 400, 0.6)
+    assert s.mean == pytest.approx(s.theory_mean, abs=5 * s.theory_sd / np.sqrt(20_000))
+    assert s.sd == pytest.approx(s.theory_sd, rel=0.03)
 
 
 def test_fractions_at_sums_to_one():

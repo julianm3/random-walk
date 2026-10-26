@@ -43,7 +43,14 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import QFrame, QWidget
 
 from random_walk import theory
-from random_walk.simulation import density_grid, fractions_at, normalize_rows, parity_bins
+from random_walk.simulation import (
+    density_grid,
+    fractions_at,
+    legend_lines,
+    legend_stats,
+    normalize_rows,
+    parity_bins,
+)
 from random_walk.ticks import nice_step, nice_ticks, tick_label
 
 MARGIN = 8  # px; blank border inside the frame, so nothing touches it
@@ -77,6 +84,10 @@ WALL_COLOR = "#8c8c8c"  # mid grey vertical line marking the reflecting wall
 WALL_WIDTH = 1.0  # px
 WALL_MARGIN = 6  # positions shown left of the wall: clear of the step axis; even, so the
 # density columns (2 positions each) start at the wall rather than straddling its line
+LEGEND_INSET = 6  # px from the plot's top-right corner to the legend box
+LEGEND_PADDING = 4  # px inside the box, around the text
+LEGEND_BORDER_COLOR = "#8c8c8c"  # mid grey, 1 px
+LEGEND_OPACITY = 0.85  # the box's background (the window colour), so bars just show through
 AXIS_COLOR = "black"
 AXIS_WIDTH = 1.0  # px; axis lines and ticks
 TICK_LENGTH = 5  # px; ticks point outwards from the plot
@@ -120,6 +131,10 @@ class Drawing:
     # step (and the theory curve), however few trials are counted: the bars grow into a still
     # frame. Early on, with few trials, the tallest bars are cut off at the top.
     probability_from_full: bool = False
+    # A box in the plot's top-right corner: the shown step, the number of trials counted, and
+    # their mean and sd there beside the theory's (left out while the wall is on: the theory
+    # is for no wall).
+    legend: bool = False
 
 
 def x_to_screen(
@@ -416,6 +431,41 @@ class WalkView(QFrame):
         if self._shows_steps():
             self._paint_step_axis(painter)
         self._paint_x_axis(painter)
+        lines = self.legend_text()
+        if lines:
+            self._paint_legend(painter, lines)
+
+    def legend_text(self) -> list[str] | None:
+        """The legend's lines for the current drawing, or None when the legend is off. With
+        the wall on there are no theory values (the theory is for no wall)."""
+        if not self._drawing.legend or self._paths is None:
+            return None
+        step = self.shown_step()
+        positions = self._paths[: self.trial_count(), step]
+        stats = legend_stats(positions, step, self._p_right)
+        return legend_lines(stats, with_theory=self._wall is None)
+
+    def _paint_legend(self, painter: QPainter, lines: list[str]) -> None:
+        """The lines in a box at the plot's top-right, over everything else in the plot."""
+        metrics = QFontMetricsF(self.font())
+        width = max(metrics.horizontalAdvance(line) for line in lines) + 2 * LEGEND_PADDING
+        height = metrics.height() * len(lines) + 2 * LEGEND_PADDING
+        area = self.walk_area()
+        left = area.right() - LEGEND_INSET - width
+        box = QRectF(left, area.top() + LEGEND_INSET, width, height)
+        background = self.palette().window().color()
+        background.setAlphaF(LEGEND_OPACITY)
+        painter.save()
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)  # crisp 1 px border
+        painter.setPen(QPen(QColor(LEGEND_BORDER_COLOR), 1))
+        painter.setBrush(background)
+        painter.drawRect(box)
+        painter.setPen(QColor(AXIS_COLOR))
+        text = box.adjusted(LEGEND_PADDING, LEGEND_PADDING, -LEGEND_PADDING, -LEGEND_PADDING)
+        painter.drawText(
+            text, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop, "\n".join(lines)
+        )
+        painter.restore()
 
     def density_image(self) -> QImage:
         """The counted walks' positions at every step as a greyscale image: one row per step
