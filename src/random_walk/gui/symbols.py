@@ -31,7 +31,7 @@ PAUSE = chr(0x23F8)  # DOUBLE VERTICAL BAR
 PLAY_PAUSE = chr(0x23EF)  # BLACK RIGHT-POINTING TRIANGLE WITH DOUBLE VERTICAL BAR
 
 FONT_FILE = "NotoSansSymbols2-Media.ttf"
-POINT_SIZE = 22
+POINT_SIZE = 16  # the buttons size themselves to it, so it also sets the slider rows' height
 
 _family: str | None = None
 

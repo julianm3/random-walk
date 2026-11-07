@@ -31,12 +31,20 @@ version (v0.3.x).
 
 `random-walk` / `py -m random_walk` -> `cli.main()` -> `gui.app.run()` -> `MainWindow`.
 
-- **Window** (`gui/main_window.py`): title top right; the drawing area (`WalkView`) takes the
-  spare space; below it, in one zero-spacing layout with exact gaps (`CONTROL_GAP` 12,
-  `SELECTOR_TOP_GAP` 18 including `WINDOW_SPACING` 8), the Steps / Trials selector
-  (`PositionSelector`), two `SliderRow`s ("Steps", "Trials": label, jump-to-start button,
-  640 px slider, jump-to-end button, invisible mirror of the label to keep it centred) and
-  the player controls (step back, Play/Pause, step forward).
+- **Window** (`gui/main_window.py`, opens at `INITIAL_SIZE` 800 x 900): title top right;
+  the drawing area (`WalkView`) takes the spare space; below it, in one zero-spacing layout
+  with exact gaps (`CONTROL_GAP` 6, `SELECTOR_TOP_GAP` = CONTROL_GAP + 6, which includes
+  `WINDOW_SPACING` 8), the Steps / Trials selector (`PositionSelector` with
+  `labels_beside=True`: "Steps (o)---(o) Trials" on one line, 27 px tall instead of 46), two
+  `SliderRow`s ("Steps", "Trials": label, jump-to-start button, 500 px slider, jump-to-end
+  button, invisible mirror of the label to keep it centred) and the player controls (step
+  back, Play/Pause, step forward). The user tuned these sizes by hand in v0.3.8 (from 640 px
+  sliders, gaps of 12, 22 pt symbols and a 1000 x 760 window); the minimum width is now
+  ~730 px.
+- **Selector** (`gui/position_selector.py`): labels below the circles by default, or with
+  exactly two positions `labels_beside` (v0.3.8) puts them either side, vertically centred,
+  the circles just `spacing` apart; clicking a label or circle selects it. Raises ValueError
+  for `labels_beside` with any other count.
 - **Modes** (`set_mode()`; each with its own `Playback`, one `QTimer` while playing):
   - Steps (`STEPS_DRAWING`, `show_step()`): the Steps slider (0-1000, starts at 1000) is the
     playhead; Play runs to step 1000 at 30 steps/s, from 0 again if at the end. The Trials
@@ -92,8 +100,11 @@ version (v0.3.x).
   `DENSITY_GAMMA` 0.3, the user's choices), drawn as a stretched image. Walk drawing
   (`Drawing.walks`) is still there, though no mode uses it.
 - **Look**: Source Code Pro everywhere (`gui/ui_fonts.py`), button symbols from a bundled Noto
-  Sans Symbols 2 subset (`gui/symbols.py`). Sliders: 1 px track, black left of the handle,
-  light grey right, 4 x 23 px black bar handle (`gui/style.py`, shared by the window and the
+  Sans Symbols 2 subset (`gui/symbols.py`, `POINT_SIZE` 16; the buttons size themselves to
+  it, so it sets the slider rows' height). Sliders: 16 px tall (`SLIDER_HEIGHT`), 1 px track,
+  black left of the handle, light grey right, 4 x 15 px black bar handle (track + 2 x
+  `SLIDER_HANDLE_OVERHANG` 7; keep SLIDER_HEIGHT at least that or it's clipped)
+  (`gui/style.py`, shared by the window and the
   dialogs; a style sheet replaces native drawing, so all slider styling goes in
   `SLIDER_STYLE`). Play/Pause shows the combined symbol, grey while paused, black on hover
   and while playing (`HoverColorButton`).

@@ -83,14 +83,14 @@ from random_walk.playback import Playback
 from random_walk.simulation import simulate_paths
 
 TITLE = "Random Walk"
-SLIDER_WIDTH = 640  # px; fixed, independent of the window width
+SLIDER_WIDTH = 500  # px; fixed, independent of the window width
 WINDOW_SPACING = 8  # px; the window layout's spacing between the title, drawing and controls
 # Vertical gaps below the drawing area, all exact (px). They share one value so the controls
 # are evenly spaced; each can still be tuned on its own.
-CONTROL_GAP = 12
+CONTROL_GAP = 6
 # +6: the drawing area's frame and the circles have no internal padding (buttons and sliders
 # do), so this gap needs a little more to look the same as the others. It includes the window
-# layout's spacing.
+# layout's spacing, so keep it at least WINDOW_SPACING.
 SELECTOR_TOP_GAP = CONTROL_GAP + 6  # drawing area -> position selector
 SELECTOR_BOTTOM_GAP = CONTROL_GAP  # position selector -> top slider row
 SLIDER_GAP = CONTROL_GAP  # between the two slider rows
@@ -151,7 +151,7 @@ EDITOR_PADDING = 16  # px added to the widest number's width in a slider's numbe
 EDITOR_GAP = 2  # px between the number box and the top of the slider
 SPI_GETKEYBOARDDELAY = 0x0016  # Windows SystemParametersInfo: the key repeat delay setting
 AXIS_POINT_SIZE = 8  # drawing area's axis labels
-INITIAL_SIZE = (1000, 760)
+INITIAL_SIZE = (800, 900)  # px; the drawing area takes whatever the controls leave
 # The sliders' look (SLIDER_HEIGHT, SLIDER_STYLE) is in gui/style.py, shared with the dialogs.
 
 
@@ -178,7 +178,7 @@ class MainWindow(QMainWindow):
         self.drawing_area.setMinimumSize(320, 200)
         layout.addWidget(self.drawing_area, stretch=1)
 
-        self.position_selector = PositionSelector(SELECTOR_LABELS)
+        self.position_selector = PositionSelector(SELECTOR_LABELS, labels_beside=True)
         self.slider_rows = tuple(SliderRow(*row) for row in SLIDER_ROWS)
         self.steps_slider = self.slider_rows[0].slider
         self.trials_slider = self.slider_rows[1].slider

@@ -4,14 +4,20 @@
     Position 1   Position 2   Position 3
        Text         Text         Text
 
+With exactly two positions, `labels_beside` puts the labels either side instead, centred on
+the circles, so the control is only as tall as a circle (or a label):
+
+    Steps ( * )--------(   ) Trials
+
 Click a circle or its label to select that position; the dot slides there and
 `currentIndexChanged` is emitted. Exactly one position is selected at a time.
 
 Geometry, all in px:
   diameter    circle diameter (the control's "height"); the dot is half of it
-  spacing     edge-to-edge gap between neighbouring circles - a minimum: it grows so the widest
-              label fits, keeping every gap equal
-  label_gap   from the bottom of the circles to the top of the labels
+  spacing     edge-to-edge gap between neighbouring circles - with labels below, a minimum:
+              it grows so the widest label fits, keeping every gap equal
+  label_gap   from the circles to their labels: below them, or beside them with
+              `labels_beside`
 """
 
 from __future__ import annotations
@@ -57,15 +63,19 @@ class PositionSelector(QWidget):
         diameter: int = DEFAULT_DIAMETER,
         spacing: int = DEFAULT_SPACING,
         label_gap: int = DEFAULT_LABEL_GAP,
+        labels_beside: bool = False,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         if not labels:
             raise ValueError("PositionSelector needs at least one position")
+        if labels_beside and len(labels) != 2:
+            raise ValueError("labels_beside needs exactly two positions")
         self._labels = list(labels)
         self._diameter = diameter
         self._spacing = spacing
         self._label_gap = label_gap
+        self._beside = labels_beside
         self._index = 0
         self._dot = 0.0  # dot position in index units; fractional while sliding
 
@@ -111,18 +121,31 @@ class PositionSelector(QWidget):
         return QSize(int(rect.width() + 1), int(rect.height() + 1))
 
     def _pitch(self) -> float:
+        if self._beside:  # no labels between the circles to make room for
+            return self._diameter + self._spacing
         widest = max(self._label_size(t).width() for t in self._labels)
         return circle_pitch(self._diameter, self._spacing, widest)
 
     def _side_margin(self, label: str) -> float:
         """Room from the widget edge to an end circle's centre: half the circle (plus the
-        outline) or half that circle's label, whichever is wider."""
-        return max(self._diameter / 2 + LINE_WIDTH, self._label_size(label).width() / 2)
+        outline) and, with labels beside, the label and its gap; with labels below, half the
+        circle or half its label, whichever is wider."""
+        circle = self._diameter / 2 + LINE_WIDTH
+        if self._beside:
+            return circle + self._label_gap + self._label_size(label).width()
+        return max(circle, self._label_size(label).width() / 2)
+
+    def _labels_height(self) -> float:
+        return max(self._label_size(t).height() for t in self._labels)
 
     def _centre(self, position: float) -> QPointF:
         """Centre of the circle at `position` (fractional while the dot slides)."""
         x = self._side_margin(self._labels[0]) + position * self._pitch()
-        return QPointF(x, LINE_WIDTH + self._diameter / 2)
+        if self._beside:  # circles and labels share one centre line
+            y = max(self._diameter + 2 * LINE_WIDTH, self._labels_height()) / 2
+        else:
+            y = LINE_WIDTH + self._diameter / 2
+        return QPointF(x, y)
 
     def _circle_rect(self, index: int) -> QRectF:
         c, r = self._centre(index), self._diameter / 2
@@ -130,9 +153,19 @@ class PositionSelector(QWidget):
 
     def _label_rect(self, index: int) -> QRectF:
         size = self._label_size(self._labels[index])
+        centre = self._centre(index)
+        if self._beside:  # left of the first circle, right of the second
+            reach = self._diameter / 2 + LINE_WIDTH + self._label_gap
+            x = centre.x() - reach - size.width() if index == 0 else centre.x() + reach
+            return QRectF(x, centre.y() - size.height() / 2, size.width(), size.height())
         top = LINE_WIDTH + self._diameter + self._label_gap
-        x = self._centre(index).x() - size.width() / 2
-        return QRectF(x, top, size.width(), size.height())
+        return QRectF(centre.x() - size.width() / 2, top, size.width(), size.height())
+
+    def _label_alignment(self, index: int) -> Qt.AlignmentFlag:
+        """How a label's lines line up: towards its circle when beside it, else centred."""
+        if not self._beside:
+            return Qt.AlignmentFlag.AlignHCenter
+        return Qt.AlignmentFlag.AlignRight if index == 0 else Qt.AlignmentFlag.AlignLeft
 
     def sizeHint(self) -> QSize:
         width = (
@@ -140,8 +173,10 @@ class PositionSelector(QWidget):
             + (self.count() - 1) * self._pitch()
             + self._side_margin(self._labels[-1])
         )
-        labels_height = max(self._label_size(t).height() for t in self._labels)
-        height = LINE_WIDTH + self._diameter + self._label_gap + labels_height
+        if self._beside:
+            height = max(self._diameter + 2 * LINE_WIDTH, self._labels_height())
+        else:
+            height = LINE_WIDTH + self._diameter + self._label_gap + self._labels_height()
         return QSize(int(width + 1), int(height + 1))
 
     def minimumSizeHint(self) -> QSize:
@@ -170,7 +205,7 @@ class PositionSelector(QWidget):
 
         painter.setPen(color)
         for i, text in enumerate(self._labels):
-            painter.drawText(self._label_rect(i), Qt.AlignmentFlag.AlignHCenter, text)
+            painter.drawText(self._label_rect(i), self._label_alignment(i), text)
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
         pos = event.position()
