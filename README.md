@@ -72,9 +72,11 @@ step in Steps mode and one trial in Trials mode.
 
 ## What you're looking at
 
-- **Grey shading (Steps mode):** how many walks were at each position at each step, from
-  step 0 at the bottom up to the current step. Each step is shaded on its own scale, so the
-  darkest cell in every row is where most of that step's walks were.
+- **Grey shading (Steps mode):** the walks' paths, from step 0 at the bottom up to the
+  current step. Each walk is traced exactly through its positions, and where many paths
+  overlap the shading builds up darker. Each step is shaded on its own scale, so the darkest
+  part of every row is where most of that step's walks passed. With only a few trials you
+  can follow each walk as a thin line.
 - **Light grey bars:** the histogram, each bar's share of the trials, against the
   probability axis on the right.
 - **Red curve:** the theoretical distribution after that many steps, a normal curve with mean

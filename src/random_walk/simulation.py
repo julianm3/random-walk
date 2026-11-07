@@ -194,6 +194,37 @@ def density_grid(paths: IntArray, lo: int, hi: int, bin_width: int = 2) -> IntAr
     return grid
 
 
+def trace_grid(paths: IntArray, lo: int, hi: int) -> tuple[IntArray, IntArray]:
+    """The walks' traces as a grid, and each step's busiest position.
+
+    `segments` has shape (steps, hi - lo): row k is the stretch from step k to step k + 1,
+    column j the unit interval [lo + j, lo + j + 1], and each cell counts the walks whose line
+    from step k to k + 1 crosses it. Every step moves a walk by exactly one position (the
+    reflecting wall keeps that true), so each line crosses exactly one interval, the one
+    starting at the lower of its two ends. A walk from (20, 100) to (21, 101) lands in the
+    cell from 20 to 21, rows 100 to 101: drawn as an image, each walk is a chain of cells
+    meeting corner to corner at its exact positions. And there's no combing: in any row the
+    walks going up start their interval on one parity, those going down on the other.
+
+    `peaks` has shape (steps + 1,): the most walks at any one position at each step - the
+    tallest histogram bar's count, since width-2 parity bins hold one position each.
+
+    `lo`..`hi` must cover every position. One column of paths at a time: low memory.
+    """
+    runs, points = paths.shape
+    n_positions = hi - lo + 1
+    segments = np.zeros((points - 1, max(hi - lo, 1)), dtype=np.int64)
+    peaks = np.zeros(points, dtype=np.int64)
+    if runs == 0:
+        return segments, peaks
+    for k in range(points):
+        peaks[k] = np.bincount(paths[:, k] - lo, minlength=n_positions).max()
+        if k + 1 < points:
+            starts = np.minimum(paths[:, k], paths[:, k + 1]) - lo
+            segments[k] = np.bincount(starts, minlength=segments.shape[1])[: segments.shape[1]]
+    return segments, peaks
+
+
 def normalize_rows(grid: IntArray) -> FloatArray:
     """Each row scaled to its own maximum (rows of zeros stay zero), so every step is shaded
     on the same 0..1 scale however spread out its walks are."""

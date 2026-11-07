@@ -45,12 +45,12 @@ from PySide6.QtWidgets import QFrame, QWidget
 from random_walk import theory
 from random_walk.placement import Side, legend_side
 from random_walk.simulation import (
-    density_grid,
     fractions_at,
     legend_lines,
     legend_stats,
     normalize_rows,
     parity_bins,
+    trace_grid,
 )
 from random_walk.ticks import nice_step, nice_ticks, tick_label
 
@@ -67,7 +67,6 @@ DENSITY_DARKEST = "#222222"
 # sparse cells (at 0.3 a cell with 5% of the peak gets 41% of the shading, not 5%), so the
 # fan's thin outer edges show while the centre stays darkest. 1 = linear.
 DENSITY_GAMMA = 0.3
-DENSITY_BIN_WIDTH = 2  # positions per density column (one even, one odd)
 DENSITY_CACHE_SIZE = 4  # density images kept (one per shown step); animation makes many
 BAR_GAP = 1.0  # px between neighbouring bars, so they stay distinct
 THEORY_COLOR = "#F08080"  # light red (light coral) theory curve
@@ -83,8 +82,7 @@ THEORY_HEADROOM = 0.18
 BAR_HEADROOM = 0.05
 WALL_COLOR = "#8c8c8c"  # mid grey vertical line marking the reflecting wall
 WALL_WIDTH = 1.0  # px
-WALL_MARGIN = 6  # positions shown left of the wall: clear of the step axis; even, so the
-# density columns (2 positions each) start at the wall rather than straddling its line
+WALL_MARGIN = 6  # positions shown left of the wall, so its line stands clear of the step axis
 LEGEND_INSET = 6  # px from the plot's top-right corner to the legend box
 LEGEND_PADDING = 4  # px inside the box, around the text
 LEGEND_BORDER_COLOR = "#8c8c8c"  # mid grey, 1 px
@@ -227,7 +225,11 @@ class WalkView(QFrame):
         self._tallest_from: NDArray[np.float64] = np.zeros(0)
         self.hold_density = False
         self._legend_side: Side = "right"  # the legend's top corner; see _paint_legend
-        self._density_images: dict[tuple[int, int], QImage] = {}  # by (trials, last step)
+        # by (trials, last step, pixel height)
+        self._density_images: dict[tuple[int, int, int], QImage] = {}
+        # The shading squeezed to the plot's height: ((trials, height), first steps, rows).
+        self._combined: tuple[tuple[int, int], NDArray[np.int64], NDArray[np.float64]] | None
+        self._combined = None
 
     def set_paths(
         self, paths: NDArray[np.int64], p_right: float = 0.5, wall: int | None = None
@@ -512,22 +514,41 @@ class WalkView(QFrame):
         )
         painter.restore()
 
-    def density_image(self) -> QImage:
-        """The counted walks' positions at every step as a greyscale image: one row per step
-        (step 0 at the bottom), one column per DENSITY_BIN_WIDTH positions, each row shaded
-        relative to its own busiest cell; rows above the shown step are left empty. Counted
-        once per number of trials (~0.1 s for 10,000 walks), unless `hold_density` keeps the
-        last count; the last few shown steps' images are cached."""
+    def density_image(self, height: int | None = None) -> QImage:
+        """The counted walks' traces as a greyscale image (simulation.trace_grid): one row per
+        stretch between steps (step 0 at the bottom), one column per unit interval between
+        positions, each row shaded relative to its own busiest cell; rows beyond the shown
+        step are left empty. Counted once per number of trials (~75 ms for 10,000 walks),
+        unless `hold_density` keeps the last count; the last few images are cached.
+
+        With `height` (px) below the number of steps, the image is that tall instead: each
+        pixel row takes the darkest of the steps it covers. Scaling down by dropping rows
+        would cut gaps into a lone walk's trace."""
         shade = self._density_counted()
         last = self.shown_step()
-        key = (self._density_trials, last)
+        rows = len(shade)
+        height = rows if height is None else min(max(height, 1), rows)
+        key = (self._density_trials, last, height)
         if key not in self._density_images:
-            shade = shade.copy()
-            shade[last + 1 :] = 0  # the walks haven't got there yet
+            # `lifted`: the shade raised to DENSITY_GAMMA, which lifts the sparse cells. (For
+            # combined rows it's applied once, in the cache: the darkest of the lifted values
+            # is the lifted darkest value.)
+            if height < rows:  # combine, don't drop: the darkest step in each pixel row
+                starts, combined = self._combined_rows(height)
+                lifted = combined.copy()
+                boundary = last * height // rows  # the pixel row holding step `last`
+                if boundary < height:  # (at the last step every row is shown)
+                    lifted[boundary:] = 0  # the walks haven't got there yet
+                    if last > starts[boundary]:  # its steps before `last` are shown
+                        darkest_so_far = self._density_shade_rows(starts[boundary], last)
+                        lifted[boundary] = darkest_so_far**DENSITY_GAMMA
+            else:
+                lifted = shade.copy()
+                lifted[last:] = 0  # the walks haven't got there yet (row k runs to k + 1)
+                lifted **= DENSITY_GAMMA
             empty = self.palette().window().color().lightness()
             darkest = QColor(DENSITY_DARKEST).lightness()
-            shade = shade**DENSITY_GAMMA  # lift the sparse cells (see DENSITY_GAMMA)
-            grey = np.round(empty - shade * (empty - darkest)).astype(np.uint8)
+            grey = np.round(empty - lifted * (empty - darkest)).astype(np.uint8)
             pixels = np.ascontiguousarray(grey[::-1])  # image rows run top-down
             height, width = pixels.shape
             image = QImage(pixels.data, width, height, width, QImage.Format.Format_Grayscale8)
@@ -536,22 +557,41 @@ class WalkView(QFrame):
             self._density_images[key] = image.copy()  # own the pixels; `pixels` is temporary
         return self._density_images[key]
 
+    def _combined_rows(self, height: int) -> tuple[NDArray[np.int64], NDArray[np.float64]]:
+        """The whole shading squeezed into `height` pixel rows, each the darkest of the steps
+        it covers, already raised to DENSITY_GAMMA, and each pixel row's first step. Cached
+        per count and height, so a frame only has to blank the rows beyond its step."""
+        shade = self._density_counted()
+        cache_key = (self._density_trials, height)
+        if self._combined is None or self._combined[0] != cache_key:
+            rows = len(shade)
+            pixel_rows = np.arange(rows) * height // rows  # every pixel row gets >= 1 step
+            starts = np.flatnonzero(np.diff(pixel_rows, prepend=-1))
+            combined = np.maximum.reduceat(shade, starts, axis=0) ** DENSITY_GAMMA
+            self._combined = (cache_key, starts, combined)
+        return self._combined[1], self._combined[2]
+
+    def _density_shade_rows(self, first: int, stop: int) -> NDArray[np.float64]:
+        """The darkest shade over steps `first`..`stop - 1`, cell by cell."""
+        assert self._density_shade is not None
+        return self._density_shade[first:stop].max(axis=0)
+
     def _density_counted(self) -> NDArray[np.float64]:
         """The density shading for the counted trials, counting them first if needed (unless
-        `hold_density` keeps the last count). The count also gives each step's tallest bar:
-        at any one step every walk shares a parity, so each width-2 density cell holds one
-        histogram bin."""
+        `hold_density` keeps the last count). The same pass gives each step's tallest
+        histogram bar (`trace_grid`'s peaks)."""
         assert self._paths is not None
         trials = self.trial_count()
         if self._density_shade is None or (
             trials != self._density_trials and not self.hold_density
         ):
             lo, hi = self._x_range
-            grid = density_grid(self._paths[:trials], lo, hi, DENSITY_BIN_WIDTH)
-            self._density_shade = normalize_rows(grid)
+            segments, peaks = trace_grid(self._paths[:trials], lo, hi)
+            self._density_shade = normalize_rows(segments)
             self._density_trials = trials
             self._density_images = {}
-            tallest = grid.max(axis=1) / max(trials, 1)
+            self._combined = None  # (new walks may keep the same number of trials)
+            tallest = peaks / max(trials, 1)
             self._tallest_from = np.maximum.accumulate(tallest[::-1])[::-1]
         return self._density_shade
 
@@ -576,20 +616,18 @@ class WalkView(QFrame):
         painter.restore()
 
     def _paint_density(self, painter: QPainter) -> None:
-        image = self.density_image()
         area = self.walk_area()
+        image = self.density_image(height=max(1, round(area.height())))
         lo = self._x_range[0]
-        # Column j holds positions lo + 2j and lo + 2j + 1, so it's centred half a position
-        # right of lo + 2j; rows are centred on their steps.
-        left = float(x_to_screen(lo - 0.5, self._x_range, area))
-        right = float(
-            x_to_screen(lo + image.width() * DENSITY_BIN_WIDTH - 0.5, self._x_range, area)
-        )
-        row = area.height() / max(self._steps, 1)
-        target = QRectF(left, area.top() - row / 2, right - left, area.height() + row)
+        # Column j is the interval from lo + j to lo + j + 1, row k the stretch from step k to
+        # k + 1 - so the image spans exactly from position lo and step 0 to its far corner,
+        # and every walk's trace meets its exact positions.
+        left = float(x_to_screen(lo, self._x_range, area))
+        right = float(x_to_screen(lo + image.width(), self._x_range, area))
+        target = QRectF(left, area.top(), right - left, area.height())
         painter.save()
         painter.setClipRect(area)
-        painter.drawImage(target, image)  # nearest-neighbour scaling keeps the bins crisp
+        painter.drawImage(target, image)  # nearest-neighbour scaling keeps the cells crisp
         painter.restore()
 
     def _paint_theory(self, painter: QPainter) -> None:

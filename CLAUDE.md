@@ -75,8 +75,8 @@ version (v0.3.x).
     bar), not rounded, ticks the round values below - the bell keeps a steady height and the
     labels slide. 0.18 is the smallest headroom with no bar cut off at 10,000 trials.
   - Steps mode, no curve (wall on, step 0, P(right) 0 or 1): top = the tallest bar from this
-    step to the end x 1.05 (`WalkView.tallest_from()`, a suffix max from the density count;
-    at one step all walks share a parity, so each 2-wide cell is one bin). Only shrinks as a
+    step to the end x 1.05 (`WalkView.tallest_from()`, a suffix max of `trace_grid`'s peaks:
+    each step's busiest position, as width-2 parity bins hold one position). Only shrinks as a
     run plays: no flicker, nothing cut off.
   - Trials mode: fixed to all 10,000 trials at the chosen step and its theory peak
     (`probability_from_full`); early bars are cut off at the top, by the user's choice.
@@ -106,12 +106,23 @@ version (v0.3.x).
   the wall, plus ~50 ms for the first density image.
 - **Drawing** (`gui/walk_view.py`): what's shown is a frozen `Drawing` built per frame. Room
   for both side axes is always reserved, so x positions never move. With the wall on: no
-  theory curve, the x range starts `WALL_MARGIN` 6 positions left of the wall (even, so the
-  2-wide density columns start at it), and a grey line marks it at wall - 1 (the lowest bar's
-  left edge). Density: `density_grid()` counted once per number of trials (held while the
-  Trials slider is dragged, `hold_density`), shaded per row (`DENSITY_DARKEST` #222222,
-  `DENSITY_GAMMA` 0.3, the user's choices), drawn as a stretched image. Walk drawing
-  (`Drawing.walks`) is still there, though no mode uses it.
+  theory curve, the x range starts `WALL_MARGIN` 6 positions left of the wall, and a grey
+  line marks it at wall - 1 (the lowest bar's left edge). Walk drawing (`Drawing.walks`) is
+  still there, though no mode uses it.
+- **Density traces** (v0.4.0, the user's report: a lone walk at 20 after 100 steps showed
+  as a bar 2 positions wide, shifted half a position): `simulation.trace_grid()` counts, per
+  stretch between steps k and k + 1, the walks whose line crosses each unit interval
+  [x, x + 1] (every step moves one position, so exactly one interval). The image spans
+  exactly from position lo, step 0: each walk is a chain of cells meeting at its exact
+  positions, a thin line. No combing: walks going up start on one parity, going down on the
+  other. ~75 ms per count (once per number of trials; held while the Trials slider is
+  dragged, `hold_density`). The same pass gives `peaks` for the axis. The plot is shorter
+  than 1000 rows, so the image is squeezed to the plot's pixel height by taking the darkest
+  step in each pixel row (`_combined_rows`, cached per count and height, DENSITY_GAMMA
+  applied there); dropping rows (Qt's nearest-neighbour scaling) cut gaps in a lone walk's
+  line. Shaded per row (`DENSITY_DARKEST` #222222, `DENSITY_GAMMA` 0.3, the user's choices).
+  Frame repaint ~25 ms (v0.3.9 ~23). The histogram keeps its width-2 bins (correct, the
+  user confirmed). `simulation.density_grid()` (2-wide position bins) is no longer used.
 - **Look**: Source Code Pro everywhere (`gui/ui_fonts.py`), button symbols from a bundled Noto
   Sans Symbols 2 subset (`gui/symbols.py`, `POINT_SIZE` 16; the buttons size themselves to
   it, so it sets the slider rows' height). Sliders: 16 px tall (`SLIDER_HEIGHT`), 1 px track,

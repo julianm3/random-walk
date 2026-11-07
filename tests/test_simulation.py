@@ -12,6 +12,7 @@ from random_walk.simulation import (
     simulate,
     simulate_paths,
     summarize,
+    trace_grid,
 )
 
 
@@ -291,6 +292,34 @@ def test_density_grid_has_no_empty_parity_columns():
     grid = density_grid(paths, int(paths.min()), int(paths.max()))
     middle = grid[50, 5:-5]
     assert (middle > 0).all()
+
+
+def test_trace_grid_puts_a_walk_in_the_intervals_it_crosses():
+    # One walk: 0 -> 1 -> 2 -> 1 (positions), with lo = -1, hi = 2: intervals [-1,0], [0,1],
+    # [1,2]. Step 0->1 crosses [0,1]; 1->2 crosses [1,2]; 2->1 crosses [1,2] again.
+    segments, peaks = trace_grid(np.array([[0, 1, 2, 1]]), lo=-1, hi=2)
+    np.testing.assert_array_equal(segments, [[0, 1, 0], [0, 0, 1], [0, 0, 1]])
+    np.testing.assert_array_equal(peaks, [1, 1, 1, 1])
+
+
+def test_trace_grid_rows_hold_every_walk_and_both_parities():
+    paths = simulate_paths(2000, 60, wall=None, rng=rng())
+    lo, hi = int(paths.min()), int(paths.max())
+    segments, _ = trace_grid(paths, lo, hi)
+    assert segments.shape == (60, hi - lo)
+    assert (segments.sum(axis=1) == 2000).all()  # every walk crosses one interval per step
+    # No combing: a busy row fills neighbouring columns of both parities, unlike positions.
+    middle = segments[50, (0 - lo) - 5 : (0 - lo) + 5]
+    assert (middle > 0).all()
+
+
+def test_trace_grid_peaks_are_the_tallest_histogram_bar():
+    paths = simulate_paths(500, 40, wall=-3, p_right=0.4, rng=rng())
+    lo, hi = int(paths.min()), int(paths.max())
+    _, peaks = trace_grid(paths, lo, hi)
+    for step in (0, 1, 7, 40):
+        _, fractions = fractions_at(paths[:, step], parity_bins(paths[:, step]))
+        assert peaks[step] == round(fractions.max() * 500)
 
 
 def test_normalize_rows_scales_each_row_to_its_peak():

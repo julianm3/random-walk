@@ -55,10 +55,13 @@ Both modes keep their slider positions.
 
 ### Drawing speed
 
-- Density: `simulation.density_grid()` counts walks per (step, 2-wide position bin) once per
-  number of trials; `WalkView` shades it into a small greyscale image and stretches it. Far
-  faster than drawing thousands of lines.
-- The same count gives each step's tallest histogram bar, which sizes the probability axis
+- Density: `simulation.trace_grid()` counts, between each pair of steps, how many walks'
+  lines cross each unit interval between positions, once per number of trials; `WalkView`
+  shades it into a small greyscale image (squeezed to the plot's height by taking the
+  darkest step per pixel row, so no walk's line gets gaps) and stretches it. Each walk is
+  drawn exactly, as a thin line through its positions, and both parities fill every row, so
+  there's no combing. Far faster than drawing thousands of lines.
+- The same pass gives each step's tallest histogram bar, which sizes the probability axis
   when there's no theory curve to follow.
 - Polylines are filled straight from numpy arrays (`polygon_from_arrays`), about 100x faster
   than building one `QPointF` per point.
