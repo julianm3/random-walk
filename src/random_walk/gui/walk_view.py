@@ -30,7 +30,7 @@ from typing import Any
 import numpy as np
 import shiboken6
 from numpy.typing import NDArray
-from PySide6.QtCore import QPointF, QRectF, Qt
+from PySide6.QtCore import QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import (
     QColor,
     QFontMetricsF,
@@ -197,9 +197,15 @@ def probability_ticks(highest: float, max_ticks: int) -> list[float]:
 
 
 class WalkView(QFrame):
+    # The plot's left and right edges (the x axis's ends), in this widget's coordinates, each
+    # time they move: on resize, or when the side axes' labels change width. The window lines
+    # the player controls up with the axis's centre.
+    plotSpanChanged = Signal(float, float)
+
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setFrameShape(QFrame.Shape.Box)
+        self._plot_span = (0.0, 0.0)  # last reported by plotSpanChanged
         self._paths: NDArray[np.int64] | None = None
         self._x_range = (0, 0)
         self._steps = 0
@@ -412,6 +418,11 @@ class WalkView(QFrame):
         super().paintEvent(event)  # the frame
         if self._paths is None or len(self._paths) == 0:
             return
+        area = self.walk_area()
+        span = (area.left(), area.right())
+        if span != self._plot_span:
+            self._plot_span = span
+            self.plotSpanChanged.emit(*span)
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         # Back to front: density, histogram bars and walks (in the drawing's order), then axes.

@@ -24,10 +24,12 @@ need no display.
 `cli.main()` imports the GUI lazily (so the core never loads Qt) and runs `gui.app.run()`,
 which creates the `QApplication` and shows `gui.main_window.MainWindow`.
 
-- **`MainWindow`** holds the controls: the Steps / Trials selector (`PositionSelector`), two
-  `SliderRow`s, the step and Play/Pause buttons, and the right-click menu on the drawing. It
-  owns the data set's settings as one `WalkParams` (`self.params`) and an application-wide
-  key filter, so Space and the arrow keys work whatever has the focus.
+- **`MainWindow`** holds the controls: the Steps / Trials selector (a vertical
+  `PositionSelector`, its circles lined up with the two `SliderRow`s to its right, whose
+  names its labels give), the step and Play/Pause buttons (Play/Pause under the centre of the
+  plot's x axis, which `WalkView` reports), and the right-click menu on the drawing. It owns
+  the data set's settings as one `WalkParams` (`self.params`) and an application-wide key
+  filter, so Space and the arrow keys work whatever has the focus.
 - **`WalkView`** is the drawing area. What it shows is described by a frozen `Drawing`
   (density, histogram, theory curve, legend, which step, how many trials); the window builds
   one per frame. Room for both side axes is always reserved, so x positions never move.

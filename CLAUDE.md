@@ -31,20 +31,32 @@ version (v0.3.x).
 
 `random-walk` / `py -m random_walk` -> `cli.main()` -> `gui.app.run()` -> `MainWindow`.
 
-- **Window** (`gui/main_window.py`, opens at `INITIAL_SIZE` 800 x 900): title top right;
-  the drawing area (`WalkView`) takes the spare space; below it, in one zero-spacing layout
-  with exact gaps (`CONTROL_GAP` 6, `SELECTOR_TOP_GAP` = CONTROL_GAP + 6, which includes
-  `WINDOW_SPACING` 8), the Steps / Trials selector (`PositionSelector` with
-  `labels_beside=True`: "Steps (o)---(o) Trials" on one line, 27 px tall instead of 46), two
-  `SliderRow`s ("Steps", "Trials": label, jump-to-start button, 500 px slider, jump-to-end
-  button, invisible mirror of the label to keep it centred) and the player controls (step
-  back, Play/Pause, step forward). The user tuned these sizes by hand in v0.3.8 (from 640 px
-  sliders, gaps of 12, 22 pt symbols and a 1000 x 760 window); the minimum width is now
-  ~730 px.
-- **Selector** (`gui/position_selector.py`): labels below the circles by default, or with
+- **Window** (`gui/main_window.py`, opens at `INITIAL_SIZE` 800 x 900, minimum ~716 px
+  wide): title top right; the drawing area (`WalkView`) takes the spare space; below it, in
+  one zero-spacing layout with exact gaps (`CONTROL_GAP` 6, `SELECTOR_TOP_GAP` = CONTROL_GAP
+  + 6, which includes `WINDOW_SPACING` 8):
+  - `_build_control_block()` (v0.3.9): the Steps / Trials selector, vertical with its labels
+    on the left (`PositionSelector(vertical=True, label_side="left")` - the user's choice),
+    `SELECTOR_GAP` 6 px left of two `SliderRow`s (jump-to-start, 500 px slider, jump-to-end;
+    no text labels: the selector's labels name the sliders). Each circle is level with its
+    row: the rows are spaced so their pitch equals the selector's circle pitch (set by
+    `SELECTOR_SPACING` 8; gap = pitch - row height), and whichever first centre is higher
+    is pushed down. Selector + rows are centred as one group under the drawing area.
+  - The player controls (step back, Play/Pause, step forward) below, with Play/Pause under
+    the centre of the plot's x axis, not the frame's (the side labels differ in width, ~3.5
+    px): `WalkView.plotSpanChanged(left, right)` -> `_centre_player_controls()`, which sets
+    one of two invisible spacers (normally 0) to twice the offset. Measured: exact at start,
+    after resizing, in both modes, with the wall; no jitter over a run.
+  The user tuned the sizes by hand in v0.3.8 (from 640 px sliders, gaps of 12, 22 pt symbols
+  and a 1000 x 760 window).
+- **Selector** (`gui/position_selector.py`): labels below the circles by default; with
   exactly two positions `labels_beside` (v0.3.8) puts them either side, vertically centred,
-  the circles just `spacing` apart; clicking a label or circle selects it. Raises ValueError
-  for `labels_beside` with any other count.
+  the circles just `spacing` apart; `vertical` (v0.3.9) stacks the circles top to bottom
+  with every label on `label_side` ("left" or "right", default right), any number of
+  positions, `spacing` growing so multi-line labels don't collide. Clicking a label or
+  circle selects it. Raises ValueError for `labels_beside` with other than two positions,
+  `vertical` with `labels_beside`, or `label_side` without `vertical`.
+  `position_centre(i)` and `position_pitch()` let other widgets line up with the circles.
 - **Modes** (`set_mode()`; each with its own `Playback`, one `QTimer` while playing):
   - Steps (`STEPS_DRAWING`, `show_step()`): the Steps slider (0-1000, starts at 1000) is the
     playhead; Play runs to step 1000 at 30 steps/s, from 0 again if at the end. The Trials
@@ -73,7 +85,8 @@ version (v0.3.x).
   Space play/pause, Left/Right step, Home/End jump. `MainWindow.eventFilter` is installed on
   the QApplication so a focused button or slider can't take them; it swallows the releases
   too, and leaves the keys alone with Ctrl/Alt/Meta or when a QLineEdit/QAbstractSpinBox has
-  focus.
+  focus. `closeEvent` removes the filter (left installed, it was called during interpreter
+  shutdown with already-deleted layouts: "Internal C++ object already deleted").
 - **Right-click a slider**: `ValueEditor`, a frameless popup QSpinBox above the handle; Enter
   sets the slider (its handlers run as if dragged), Esc or a click outside cancels.
 - **Right-click the drawing** (`_show_drawing_menu`):
@@ -189,6 +202,10 @@ Don't propose these again without a new reason.
 - A file once reverted on disk to an old commit's version mid-session (likely an editor tab).
   If a file looks wrong, compare it with `git hash-object` against the commits before
   touching it.
+- A Qt layout not yet in a window reports a sizeHint height of 0: measure its widgets'
+  sizeHints instead (`SliderRow.height()`), as the window is built before it's shown.
+- On Windows PowerShell, quote git refs with braces: `'v0.3.8^{}'` (a bare `{}` becomes a
+  script block, which git sees as `-encodedCommand ...`).
 
 ## Layout
 

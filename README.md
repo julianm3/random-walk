@@ -40,8 +40,8 @@ The app is built with PySide6 (Qt) and has been tested on Windows 11.
 
 ## Using the app
 
-Pick a mode with the **Steps / Trials** selector under the drawing. The two sliders do
-different jobs in each mode:
+Pick a mode by clicking **Steps** or **Trials** in the selector left of the sliders. Its two
+labels also name the sliders beside them, which do different jobs in each mode:
 
 | Slider | Steps mode | Trials mode |
 |---|---|---|

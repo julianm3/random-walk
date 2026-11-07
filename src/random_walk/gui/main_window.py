@@ -8,19 +8,19 @@
     | |                                        | |
     | +----------------------------------------+ |
     |               SELECTOR_TOP_GAP             |
-    |              (*)-----------( )             |
-    |             Steps         Trials           |
-    |              SELECTOR_BOTTOM_GAP           |
-    |  Steps |<< ---|--------------------- >>|   |
-    |                  SLIDER_GAP                |
-    | Trials |<< ---|--------------------- >>|   |
+    |   Steps (*) |<< ---|-------------- >>|    |
+    |              |                             |
+    |  Trials ( ) |<< ---|-------------- >>|    |
     |                 CONTROLS_GAP               |
     |                 <<   >/||   >>             |
     +--------------------------------------------+
 
 The drawing area takes all spare space as the window resizes. Everything below it keeps its
-size, stays centred, and keeps its spacing. At startup a data set is simulated (see
-gui/walk_view.py), and the selector picks one of two animation modes on it:
+size and spacing. The Steps / Trials selector stands left of the sliders, each circle level
+with its slider (its labels name the sliders too), and the two are centred as one group
+under the drawing area; the player controls below sit with Play/Pause under the centre of
+the plot's x axis. At startup a data set is simulated (see gui/walk_view.py), and the selector picks
+one of two animation modes on it:
 
 - Steps: the first N trials (the Trials slider) advance from step 0 to the last step, 30
   steps a second, drawn as a density image with the histogram of their positions in front.
@@ -45,7 +45,7 @@ from dataclasses import replace
 
 import numpy as np
 from PySide6.QtCore import QEvent, QObject, QPoint, Qt, QTimer
-from PySide6.QtGui import QColor, QEnterEvent, QFont, QFontMetrics, QKeyEvent, QPalette
+from PySide6.QtGui import QCloseEvent, QColor, QEnterEvent, QKeyEvent, QPalette
 from PySide6.QtWidgets import (
     QAbstractSpinBox,
     QApplication,
@@ -91,10 +91,12 @@ CONTROL_GAP = 6
 # +6: the drawing area's frame and the circles have no internal padding (buttons and sliders
 # do), so this gap needs a little more to look the same as the others. It includes the window
 # layout's spacing, so keep it at least WINDOW_SPACING.
-SELECTOR_TOP_GAP = CONTROL_GAP + 6  # drawing area -> position selector
-SELECTOR_BOTTOM_GAP = CONTROL_GAP  # position selector -> top slider row
-SLIDER_GAP = CONTROL_GAP  # between the two slider rows
+SELECTOR_TOP_GAP = CONTROL_GAP + 6  # drawing area -> selector and sliders
 CONTROLS_GAP = CONTROL_GAP  # second slider row -> player controls
+# The selector's edge-to-edge gap between its circles. The slider rows are spaced to match
+# (circle pitch = row pitch, see _build_control_block), so this also sets the gap between them.
+SELECTOR_SPACING = 8
+SELECTOR_GAP = 6  # px between the selector's labels and the sliders' jump-to-start buttons
 # The animation modes, in selector order.
 STEPS_MODE, TRIALS_MODE = 0, 1
 SELECTOR_LABELS = ("Steps", "Trials")
@@ -123,15 +125,13 @@ PLAYING_COLOR = "black"  # Play/Pause symbol colour while playing
 PAUSED_COLOR = "#8c8c8c"  # ... and while paused (mid grey); it turns black on hover
 TITLE_POINT_SIZE = 14
 SELECTOR_POINT_SIZE = 8  # position selector labels
-SLIDER_LABEL_POINT_SIZE = 8  # "Steps" / "Trials" beside the sliders
-SLIDER_LABEL_GAP = 6  # px between a slider label and its row's first button
-# Slider rows, top to bottom: (label, minimum, maximum, starting value). Steps mode starts
-# at the last step (the whole run) with every trial taking part.
+# Slider rows, top to bottom: (minimum, maximum, starting value). They line up with the
+# selector's positions, whose labels name them: Steps, then Trials. Steps mode starts at the
+# last step (the whole run) with every trial taking part.
 SLIDER_ROWS = (
-    ("Steps", 0, DEFAULT_STEPS, DEFAULT_STEPS),
-    ("Trials", 0, DEFAULT_RUNS, DEFAULT_RUNS),
+    (0, DEFAULT_STEPS, DEFAULT_STEPS),
+    (0, DEFAULT_RUNS, DEFAULT_RUNS),
 )
-SLIDER_LABELS = tuple(row[0] for row in SLIDER_ROWS)
 TICK_MS = 15  # timer interval while playing; Playback paces by the clock, not by ticks
 # Keyboard control, wherever the focus is (see MainWindow.eventFilter): key -> action.
 KEY_ACTIONS: dict[int, str] = {  # (QKeyEvent.key() is an int; Qt.Key is an IntEnum)
@@ -178,26 +178,25 @@ class MainWindow(QMainWindow):
         self.drawing_area.setMinimumSize(320, 200)
         layout.addWidget(self.drawing_area, stretch=1)
 
-        self.position_selector = PositionSelector(SELECTOR_LABELS, labels_beside=True)
+        self.position_selector = PositionSelector(
+            SELECTOR_LABELS, vertical=True, label_side="left", spacing=SELECTOR_SPACING
+        )
         self.slider_rows = tuple(SliderRow(*row) for row in SLIDER_ROWS)
         self.steps_slider = self.slider_rows[0].slider
         self.trials_slider = self.slider_rows[1].slider
+        player_controls = self._build_player_controls()
+        self.apply_fonts()  # before the layout below, which is sized from the fonts
 
         # Everything below the drawing area goes in its own zero-spacing layout, so the gap
         # constants are the exact gaps (the window layout would add its spacing on top).
         controls = QVBoxLayout()
         controls.setSpacing(0)
         controls.addSpacing(SELECTOR_TOP_GAP - WINDOW_SPACING)  # the window adds the rest
-        controls.addWidget(self.position_selector, alignment=Qt.AlignmentFlag.AlignHCenter)
-        controls.addSpacing(SELECTOR_BOTTOM_GAP)
-        controls.addLayout(self.slider_rows[0].layout)
-        controls.addSpacing(SLIDER_GAP)
-        controls.addLayout(self.slider_rows[1].layout)
+        controls.addLayout(self._build_control_block())
         controls.addSpacing(CONTROLS_GAP)
-        controls.addLayout(self._build_player_controls())
+        controls.addLayout(player_controls)  # under the x axis's centre (_centre_player_controls)
         layout.addLayout(controls)
 
-        self.apply_fonts()
         # The data set's settings: the menu's dialogs change them and regenerate the data.
         self.params = WalkParams(
             DEFAULT_RUNS, DEFAULT_STEPS, False, DEFAULT_WALL, DEFAULT_P_RIGHT, DEFAULT_SEED
@@ -205,6 +204,7 @@ class MainWindow(QMainWindow):
         self.generate_data()
         self.drawing_area.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.drawing_area.customContextMenuRequested.connect(self._show_drawing_menu)
+        self.drawing_area.plotSpanChanged.connect(self._centre_player_controls)
         self._setup_animation()
         # The keys work wherever the focus is: an application-wide filter sees each key event
         # before any widget, so a focused button can't take Space nor a slider the arrows.
@@ -213,6 +213,14 @@ class MainWindow(QMainWindow):
             app.installEventFilter(self)
 
     # --- keyboard -------------------------------------------------------------------------
+
+    def closeEvent(self, event: QCloseEvent) -> None:
+        """Remove the application-wide key filter: it's only needed while the window is open,
+        and left installed it can be called during shutdown with already-deleted objects."""
+        app = QApplication.instance()
+        if app is not None:
+            app.removeEventFilter(self)
+        super().closeEvent(event)
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:
         """Handle KEY_ACTIONS keys (press and release) while this window is active, unless a
@@ -495,11 +503,47 @@ class MainWindow(QMainWindow):
         QApplication.setFont(ui_fonts.ui_font())  # every widget without its own font
         self.title.setFont(ui_fonts.ui_font(TITLE_POINT_SIZE))
         self.position_selector.setFont(ui_fonts.ui_font(SELECTOR_POINT_SIZE))
-        label_font = ui_fonts.ui_font(SLIDER_LABEL_POINT_SIZE)
-        widest = max(QFontMetrics(label_font).horizontalAdvance(t) for t in SLIDER_LABELS)
-        for row in self.slider_rows:
-            row.set_label_font(label_font, widest)
         self.drawing_area.setFont(ui_fonts.ui_font(AXIS_POINT_SIZE))
+
+    def _build_control_block(self) -> QHBoxLayout:
+        """The vertical selector left of the two slider rows, each circle level with its row,
+        centred as one group under the drawing area:
+
+             Steps (*) |<< ---|--------- >>|
+            Trials ( ) |<< ---|--------- >>|
+
+        The rows are spaced so their centres are as far apart as the circles' (the selector's
+        pitch, set by SELECTOR_SPACING); whichever of the two starts its first centre higher
+        is pushed down to meet the other. Sized from the fonts, so build it after
+        apply_fonts()."""
+        selector = self.position_selector
+        row_height = max(row.height() for row in self.slider_rows)
+        row_gap = max(0, round(selector.position_pitch() - row_height))  # (0: rows too tall)
+        first_circle = selector.position_centre(0).y()
+        offset = round(first_circle - row_height / 2)  # > 0: the circle sits lower
+
+        selector_column = QVBoxLayout()
+        selector_column.setSpacing(0)
+        selector_column.addSpacing(max(0, -offset))
+        selector_column.addWidget(selector)
+        selector_column.addStretch(1)
+
+        rows_column = QVBoxLayout()
+        rows_column.setSpacing(0)
+        rows_column.addSpacing(max(0, offset))
+        rows_column.addLayout(self.slider_rows[0].layout)
+        rows_column.addSpacing(row_gap)
+        rows_column.addLayout(self.slider_rows[1].layout)
+        rows_column.addStretch(1)
+
+        block = QHBoxLayout()
+        block.setSpacing(0)
+        block.addStretch(1)  # equal stretches either side centre the group
+        block.addLayout(selector_column)
+        block.addSpacing(SELECTOR_GAP)
+        block.addLayout(rows_column)
+        block.addStretch(1)
+        return block
 
     def _build_player_controls(self) -> QHBoxLayout:
         """Step back, Play/Pause and step forward, centred. The step buttons repeat while
@@ -522,12 +566,29 @@ class MainWindow(QMainWindow):
         self._show_play_state()
         self.play_pause.clicked.connect(self._toggle_play)
 
+        # Equal stretches centre the buttons under the drawing area; the two shift spacers
+        # (normally 0 wide) move them to the centre of its x axis (see _centre_player_controls).
+        self._player_shift_left, self._player_shift_right = QWidget(), QWidget()
         row = QHBoxLayout()
         row.addStretch(1)
+        row.addWidget(self._player_shift_left)
         for button in (self.step_back, self.play_pause, self.step_forward):
             row.addWidget(button)
+        row.addWidget(self._player_shift_right)
         row.addStretch(1)
+        for shift in (self._player_shift_left, self._player_shift_right):
+            shift.setFixedWidth(0)
         return row
+
+    def _centre_player_controls(self, plot_left: float, plot_right: float) -> None:
+        """Put Play/Pause under the centre of the plot's x axis (`plot_left`..`plot_right`, in
+        the drawing area's coordinates). The axis is off the drawing area's centre by the
+        difference between the side axes' label widths; a spacer of twice that offset on one
+        side of the centred buttons shifts them by the offset. (The step buttons either side
+        of Play/Pause are the same width, so it's the row's centre.)"""
+        offset = (plot_left + plot_right) / 2 - self.drawing_area.width() / 2
+        self._player_shift_left.setFixedWidth(max(0, round(2 * offset)))
+        self._player_shift_right.setFixedWidth(max(0, round(-2 * offset)))
 
     def _toggle_play(self) -> None:
         """Play or pause the animation. (Not a checkable button: the native style would draw
@@ -580,18 +641,14 @@ def set_quietly(slider: QSlider, value: int) -> None:
 
 
 class SliderRow:
-    """A fixed-size slider between jump-to-start and jump-to-end buttons, centred in its row,
-    with a text label to the left.
+    """A fixed-size slider between jump-to-start and jump-to-end buttons.
 
-    `layout` is the row to add to a parent layout. The buttons move the slider to its ends. An
-    invisible spacer on the right mirrors the label, so the label doesn't shift the centred
-    slider; give every row the same label width (set_label_font) to keep the rows aligned.
+    `layout` is the row to add to a parent layout (the window centres it and puts the
+    selector, whose labels name the sliders, to its left). The buttons move the slider to its
+    ends.
     """
 
-    def __init__(self, label: str, minimum: int, maximum: int, value: int) -> None:
-        self.label = QLabel(label)
-        self.label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        self._mirror = QWidget()  # same width as the label, on the right
+    def __init__(self, minimum: int, maximum: int, value: int) -> None:
         self.to_start = symbol_button(symbols.SKIP_TO_START, "Jump to start")
 
         self.slider = QSlider(Qt.Orientation.Horizontal)
@@ -605,29 +662,20 @@ class SliderRow:
         self.to_start.clicked.connect(lambda: self.slider.setValue(self.slider.minimum()))
         self.to_end.clicked.connect(lambda: self.slider.setValue(self.slider.maximum()))
 
-        # Stretch on both sides keeps the fixed-width row centred as the window resizes; the
-        # label and its mirror are equal, so they don't move the slider off centre.
         self.layout = QHBoxLayout()
-        self.layout.addStretch(1)
-        self.layout.addWidget(self.label)
-        self.layout.addSpacing(SLIDER_LABEL_GAP)
         self.layout.addWidget(self.to_start)
         self.layout.addWidget(self.slider)
         self.layout.addWidget(self.to_end)
-        self.layout.addSpacing(SLIDER_LABEL_GAP)
-        self.layout.addWidget(self._mirror)
-        self.layout.addStretch(1)
+
+    def height(self) -> int:
+        """The row's height: its tallest widget. (Asked of the widgets, not the layout, which
+        reports 0 until it's in a window.)"""
+        return max(w.sizeHint().height() for w in (self.to_start, self.slider, self.to_end))
 
     def edit_value(self) -> None:
         """Open a number box just above the slider's handle (see ValueEditor)."""
         self._editor = ValueEditor(self.slider)  # kept so Python doesn't delete it early
         self._editor.open_over_handle()
-
-    def set_label_font(self, font: QFont, width: int) -> None:
-        """Set the label's font and fix the label (and its mirror) to `width` px."""
-        self.label.setFont(font)
-        self.label.setFixedWidth(width)
-        self._mirror.setFixedWidth(width)
 
 
 class ValueEditor(QSpinBox):
