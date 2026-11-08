@@ -73,14 +73,14 @@ from random_walk.config import (
     TRIALS_PLAY_SECONDS,
 )
 from random_walk.gui import symbols, ui_fonts
-from random_walk.gui.dialogs import REGENERATES_NOTE, RegenerateDialog, WallDialog
+from random_walk.gui.dialogs import REGENERATES_NOTE, ConfigureDialog
 from random_walk.gui.position_selector import PositionSelector
 from random_walk.gui.style import SLIDER_HEIGHT, SLIDER_STYLE
 from random_walk.gui.walk_view import Drawing, WalkView
 from random_walk.pacing import TrialRamp
 from random_walk.params import WalkParams
 from random_walk.playback import Playback
-from random_walk.simulation import simulate_paths
+from random_walk.simulation import absorb_steps, simulate_paths
 
 TITLE = "Random Walk"
 SLIDER_WIDTH = 500  # px; fixed, independent of the window width
@@ -429,11 +429,19 @@ class MainWindow(QMainWindow):
     def generate_data(self) -> None:
         """Simulate the data set from `params` and give it to the drawing area. A fresh
         generator seeded with params.seed, so equal params always give the same walks (the
-        defaults: the same data every time the app starts)."""
+        defaults: the same data every time the app starts).
+
+        An absorbing wall: an absorbed walk follows its free path until it touches the wall,
+        so the walks are simulated without one, plus each walk's contact step (`ends`)."""
         p = self.params
         rng = np.random.default_rng(p.seed)
-        self.paths = simulate_paths(p.runs, p.steps, wall=p.wall, p_right=p.p_right, rng=rng)
-        self.drawing_area.set_paths(self.paths, p_right=p.p_right, wall=p.wall)
+        ends = None
+        if p.absorbing:
+            self.paths = simulate_paths(p.runs, p.steps, wall=None, p_right=p.p_right, rng=rng)
+            ends = absorb_steps(self.paths, p.wall_value)
+        else:
+            self.paths = simulate_paths(p.runs, p.steps, wall=p.wall, p_right=p.p_right, rng=rng)
+        self.drawing_area.set_paths(self.paths, p_right=p.p_right, wall=p.wall, ends=ends)
 
     def regenerate(self, params: WalkParams) -> None:
         """Switch to `params`: pause, re-simulate (~0.4 s, with a wait cursor) and redraw the
@@ -457,45 +465,30 @@ class MainWindow(QMainWindow):
     def _show_drawing_menu(self, pos: QPoint) -> None:
         """Right-click on the drawing area: the data set's settings and the legend."""
         menu = QMenu(self)
-        wall = menu.addAction("Wall...")
-        wall.setToolTip(REGENERATES_NOTE)
+        configure = menu.addAction("Configure...")
+        configure.setToolTip(REGENERATES_NOTE)
         legend = menu.addAction("Legend")
         legend.setCheckable(True)
         legend.setChecked(self.legend_on)
-        menu.addSeparator()
-        regenerate = menu.addAction("Regenerate...")
-        regenerate.setToolTip(REGENERATES_NOTE)
         chosen = menu.exec(self.drawing_area.mapToGlobal(pos))
-        if chosen is wall:
-            self.edit_wall()
+        if chosen is configure:
+            self.configure()
         elif chosen is legend:
             self.set_legend(legend.isChecked())
-        elif chosen is regenerate:
-            self.edit_regenerate()
 
     def set_legend(self, on: bool) -> None:
         """Show or hide the legend (without theory values while the wall is on)."""
         self.legend_on = on
         self._show_current_frame()
 
-    def edit_wall(self) -> None:
-        """Open the Wall dialog (pausing); OK regenerates with the chosen wall."""
+    def configure(self) -> None:
+        """Open the Configure dialog (pausing) with the current wall, bias and seed; OK
+        regenerates with the chosen ones (only if the walks would change)."""
         if self.playing:
             self.pause()
-        dialog = WallDialog(self.params.wall_enabled, self.params.wall_value, self)
+        dialog = ConfigureDialog(self.params, self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
-            enabled, position = dialog.values()
-            self.regenerate(replace(self.params, wall_enabled=enabled, wall_value=position))
-
-    def edit_regenerate(self) -> None:
-        """Open the Regenerate dialog (pausing) with the current seed and P(right); OK
-        regenerates with the chosen ones, keeping the wall."""
-        if self.playing:
-            self.pause()
-        dialog = RegenerateDialog(self.params.seed, self.params.p_right, self)
-        if dialog.exec() == QDialog.DialogCode.Accepted:
-            seed, p_right = dialog.values()
-            self.regenerate(replace(self.params, seed=seed, p_right=p_right))
+            self.regenerate(replace(self.params, **dialog.values()))
 
     def apply_fonts(self) -> None:
         """Set the interface font (Source Code Pro): the default for every widget, plus each
@@ -629,8 +622,10 @@ def keyboard_repeat() -> tuple[int, int]:
 
 
 def _data_key(params: WalkParams) -> tuple[object, ...]:
-    """What the simulated walks depend on: equal keys give equal data."""
-    return (params.runs, params.steps, params.wall, params.p_right, params.seed)
+    """What the simulated walks depend on: equal keys give equal data. (The wall mode only
+    matters while the wall is on.)"""
+    mode = params.wall_mode if params.wall_enabled else None
+    return (params.runs, params.steps, params.wall, mode, params.p_right, params.seed)
 
 
 def set_quietly(slider: QSlider, value: int) -> None:

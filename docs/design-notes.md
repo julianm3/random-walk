@@ -33,8 +33,8 @@ which creates the `QApplication` and shows `gui.main_window.MainWindow`.
 - **`WalkView`** is the drawing area. What it shows is described by a frozen `Drawing`
   (density, histogram, theory curve, legend, which step, how many trials); the window builds
   one per frame. Room for both side axes is always reserved, so x positions never move.
-- **`dialogs.py`** has the Wall and Regenerate dialogs; **`style.py`** the slider style they
-  share with the window.
+- **`dialogs.py`** has the Configure dialog; **`style.py`** the slider style it
+  shares with the window.
 
 ### The two modes
 
@@ -47,7 +47,7 @@ and restores the other mode's sliders and position.
 
 ### Regenerating
 
-The Wall and Regenerate dialogs change `self.params` through `MainWindow.regenerate()`, which
+The Configure dialog changes `self.params` through `MainWindow.regenerate()`, which
 re-simulates only if something the walks depend on changed (`_data_key`: trials, steps,
 wall, P(right), seed); a new wall position while the wall is off is just stored. It takes
 about 0.3 s without the wall and 0.4 s with it, plus ~50 ms for the first density image.

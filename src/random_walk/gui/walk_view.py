@@ -51,6 +51,7 @@ from random_walk.simulation import (
     normalize_rows,
     parity_bins,
     trace_grid,
+    trace_span,
 )
 from random_walk.ticks import nice_step, nice_ticks, tick_label
 
@@ -205,6 +206,7 @@ class WalkView(QFrame):
         self.setFrameShape(QFrame.Shape.Box)
         self._plot_span = (0.0, 0.0)  # last reported by plotSpanChanged
         self._paths: NDArray[np.int64] | None = None
+        self._ends: NDArray[np.int64] | None = None  # absorbing wall: contact steps
         self._x_range = (0, 0)
         self._steps = 0
         self._p_right = 0.5
@@ -232,19 +234,30 @@ class WalkView(QFrame):
         self._combined = None
 
     def set_paths(
-        self, paths: NDArray[np.int64], p_right: float = 0.5, wall: int | None = None
+        self,
+        paths: NDArray[np.int64],
+        p_right: float = 0.5,
+        wall: int | None = None,
+        ends: NDArray[np.int64] | None = None,
     ) -> None:
         """The data set to draw: shape (trials, steps + 1), as from simulate_paths(), with
         the bias and wall it was simulated with (for the theory curve and the wall line).
-        With a wall the theory curve is hidden, and the x range starts just left of it."""
+        With a wall the theory curve is hidden, and the x range starts just left of it.
+
+        `ends` (simulation.absorb_steps) is for an absorbing wall: each walk's contact step.
+        Its trace stops there, and from that step on it leaves the histogram, whose bars
+        stay shares of all the counted trials - so they shrink as walks are absorbed."""
         self._paths = paths
-        lo = int(paths.min()) if wall is None else min(int(paths.min()), wall - WALL_MARGIN)
-        self._x_range = (lo, int(paths.max()))
+        self._ends = ends
+        # (with an absorbing wall, where walks would have wandered after contact doesn't count)
+        lo, hi = trace_span(paths, wall if ends is not None else None)
+        if wall is not None:
+            lo = min(lo, wall - WALL_MARGIN)
+        self._x_range = (lo, hi)
         self._steps = paths.shape[1] - 1
         self._p_right = p_right
         self._wall = wall
-        finals = paths[:, -1]
-        self._bins, self._fractions = fractions_at(finals, parity_bins(finals))
+        self._bins, self._fractions = self._shares_at(len(paths), self._steps)
         self._step_fractions = (-1, np.zeros(0))
         self._density_shade = None
         self._density_images = {}
@@ -281,14 +294,32 @@ class WalkView(QFrame):
 
     def histogram(self) -> tuple[NDArray[Any], NDArray[np.float64]]:
         """The current drawing's histogram: bin centres and each bin's share of the trials
-        counted (positions at the shown step; sums to 1). Empty when no trials are counted."""
+        counted (positions at the shown step; sums to 1, or less once an absorbing wall has
+        ended walks). Empty when no trials are counted."""
         trials = self.trial_count()
         if self._paths is None or trials == 0:
             return np.zeros(0), np.zeros(0)
         if trials == len(self._paths) and self.shown_step() == self._steps:
             return self._bins, self._fractions  # every trial's final positions, precomputed
-        positions = self._paths[:trials, self.shown_step()]
-        return fractions_at(positions, parity_bins(positions))
+        return self._shares_at(trials, self.shown_step())
+
+    def _going(self, trials: int, step: int) -> NDArray[np.int64]:
+        """The positions at `step` of the first `trials` walks that are still going there
+        (all of them, unless an absorbing wall has ended some)."""
+        assert self._paths is not None
+        positions = self._paths[:trials, step]
+        if self._ends is None:
+            return positions
+        return positions[self._ends[:trials] > step]
+
+    def _shares_at(self, trials: int, step: int) -> tuple[NDArray[Any], NDArray[np.float64]]:
+        """Bin centres and each bin's share of the first `trials` trials at `step`, counting
+        only the walks still going - shares of all the trials, not of the survivors."""
+        positions = self._going(trials, step)
+        if len(positions) == 0:
+            return np.zeros(0), np.zeros(0)
+        centres, fractions = fractions_at(positions, parity_bins(positions))
+        return centres, fractions * len(positions) / trials
 
     # --- geometry ------------------------------------------------------------------------
 
@@ -345,8 +376,7 @@ class WalkView(QFrame):
         if step == self._steps:
             return self._fractions
         if self._step_fractions[0] != step and self._paths is not None:
-            positions = self._paths[:, step]
-            self._step_fractions = (step, fractions_at(positions, parity_bins(positions))[1])
+            self._step_fractions = (step, self._shares_at(len(self._paths), step)[1])
         return self._step_fractions[1]
 
     def _probability_tick_values(self, full: bool = False) -> list[float]:
@@ -456,8 +486,10 @@ class WalkView(QFrame):
         if not self._drawing.legend or self._paths is None:
             return None
         step = self.shown_step()
-        positions = self._paths[: self.trial_count(), step]
-        stats = legend_stats(positions, step, self._p_right)
+        trials = self.trial_count()
+        going = self._going(trials, step)
+        ended = None if self._ends is None else trials - len(going)  # (absorbing wall)
+        stats = legend_stats(going, step, self._p_right, ended)
         return legend_lines(stats, with_theory=self._wall is None)
 
     def legend_side(self) -> Side:
@@ -586,7 +618,8 @@ class WalkView(QFrame):
             trials != self._density_trials and not self.hold_density
         ):
             lo, hi = self._x_range
-            segments, peaks = trace_grid(self._paths[:trials], lo, hi)
+            ends = None if self._ends is None else self._ends[:trials]
+            segments, peaks = trace_grid(self._paths[:trials], lo, hi, ends)
             self._density_shade = normalize_rows(segments)
             self._density_trials = trials
             self._density_images = {}

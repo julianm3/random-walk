@@ -3,6 +3,7 @@ import pytest
 
 from random_walk.simulation import (
     LegendStats,
+    absorb_steps,
     density_grid,
     fractions_at,
     legend_lines,
@@ -13,6 +14,7 @@ from random_walk.simulation import (
     simulate_paths,
     summarize,
     trace_grid,
+    trace_span,
 )
 
 
@@ -320,6 +322,61 @@ def test_trace_grid_peaks_are_the_tallest_histogram_bar():
     for step in (0, 1, 7, 40):
         _, fractions = fractions_at(paths[:, step], parity_bins(paths[:, step]))
         assert peaks[step] == round(fractions.max() * 500)
+
+
+def test_absorb_steps_find_the_first_contact():
+    paths = np.array(
+        [
+            [0, -1, -2, -1, -2, -3],  # touches the wall at -2 on step 2
+            [0, 1, 2, 3, 4, 5],  # never does
+            [0, -1, 0, -1, -2, -1],  # step 4
+        ]
+    )
+    np.testing.assert_array_equal(absorb_steps(paths, wall=-2), [2, 6, 4])
+
+
+def test_trace_span_ignores_positions_after_contact():
+    paths = np.array([[0, -1, -2, -3, -4], [0, 1, 2, 1, 2]])
+    assert trace_span(paths) == (-4, 2)
+    assert trace_span(paths, absorbing_wall=-2) == (-2, 2)  # the first walk stops at the wall
+    # No walk reaches the wall: the free minimum stands.
+    assert trace_span(np.array([[0, 1, 0, -1]]), absorbing_wall=-5) == (-1, 1)
+
+
+def test_trace_span_low_end_matches_the_traces():
+    free = simulate_paths(500, 300, wall=None, rng=rng(4))
+    ends = absorb_steps(free, wall=-12)
+    lowest_on_trace = min(int(free[i, : ends[i] + 1].min()) for i in range(500))
+    assert trace_span(free, absorbing_wall=-12)[0] == lowest_on_trace
+
+
+def test_trace_grid_stops_absorbed_walks_at_the_wall():
+    # Walk 1 touches the wall at -2 on step 2: its trace includes the segment from -1 down
+    # to -2, then stops, and it leaves the peaks from step 2 on. Walk 2 never touches it.
+    paths = np.array([[0, -1, -2, -3], [0, 1, 0, 1]])
+    ends = absorb_steps(paths, wall=-2)
+    segments, peaks = trace_grid(paths, lo=-2, hi=1, ends=ends)
+    # intervals [-2,-1], [-1,0], [0,1]
+    np.testing.assert_array_equal(segments, [[0, 1, 1], [1, 0, 1], [0, 0, 1]])
+    np.testing.assert_array_equal(peaks, [2, 1, 1, 1])
+
+
+def test_absorbed_walks_follow_the_free_walk_until_contact():
+    free = simulate_paths(300, 200, wall=None, rng=rng(9))
+    ends = absorb_steps(free, wall=-8)
+    assert (ends < 201).any() and (ends == 201).any()  # some absorbed, some not
+    for i in range(300):
+        trace = free[i, : ends[i] + 1]
+        assert trace[:-1].min() > -8 if ends[i] < 201 else trace.min() > -8
+        if ends[i] < 201:
+            assert trace[-1] == -8  # ends exactly on the wall
+
+
+def test_legend_counts_ended_walks():
+    lines = legend_lines(LegendStats(400, 8766, 2.5, 18.0, 0.0, 20.0, 0.5, ended=1234))
+    assert lines[0] == "steps      400  trials     8766  absorbed     1234"
+    assert legend_stats(np.array([1, 3]), 3, 0.5, ended=5).ended == 5
+    assert legend_lines(LegendStats(1, 1, 1.0, 0.0, 1.0, 0.0))[0].endswith("1")  # no "ended"
 
 
 def test_normalize_rows_scales_each_row_to_its_peak():

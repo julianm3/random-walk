@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from random_walk.config import DEFAULT_SEED, MAX_JUMPS, MAX_STEPS
+from random_walk.config import DEFAULT_SEED, DEFAULT_WALL_MODE, MAX_JUMPS, MAX_STEPS
 
 
 @dataclass(frozen=True)
@@ -21,11 +21,17 @@ class WalkParams:
     wall_value: int
     p_right: float
     seed: int = DEFAULT_SEED  # the random generator's seed: equal params give equal walks
+    wall_mode: str = DEFAULT_WALL_MODE  # "reflect" or "absorb" (config.WALL_MODES)
 
     @property
     def wall(self) -> int | None:
         """The wall position to simulate with, or None for an unrestricted walk."""
         return self.wall_value if self.wall_enabled else None
+
+    @property
+    def absorbing(self) -> bool:
+        """The wall is on and ends the walks that reach it, rather than reflecting them."""
+        return self.wall_enabled and self.wall_mode == "absorb"
 
 
 def validate(runs: int, steps: int, p_right: float) -> str | None:

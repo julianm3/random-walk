@@ -118,7 +118,8 @@ LEGEND_WIDTH = 8  # characters per number column in legend_lines()
 class LegendStats(NamedTuple):
     """The step and the number of trials counted, and the measured and theoretical mean and
     sd of their positions there (no wall), and the walks' P(right). The measured ones are
-    None when no trials are counted."""
+    None when no trials are counted. With an absorbing wall, `trials` are the walks still
+    going and `ended` those the wall has absorbed (None otherwise)."""
 
     step: int
     trials: int
@@ -127,17 +128,21 @@ class LegendStats(NamedTuple):
     theory_mean: float
     theory_sd: float
     p_right: float = 0.5
+    ended: int | None = None
 
 
-def legend_stats(positions: IntArray, step: int, p_right: float) -> LegendStats:
-    """Mean and sd (population, as position_stats) of `positions` - every counted walk at
-    `step` - beside the theory for that step: mean step(2p - 1), sd sqrt(4p(1 - p) step)."""
+def legend_stats(
+    positions: IntArray, step: int, p_right: float, ended: int | None = None
+) -> LegendStats:
+    """Mean and sd (population, as position_stats) of `positions` - every counted walk still
+    going at `step` - beside the theory for that step: mean step(2p - 1), sd
+    sqrt(4p(1 - p) step). `ended`: how many counted walks an absorbing wall has ended."""
     theory_mean = theory.final_mean(step, p_right)
     theory_sd = theory.final_sd(step, p_right)
     if len(positions) == 0:
-        return LegendStats(step, 0, None, None, theory_mean, theory_sd, p_right)
+        return LegendStats(step, 0, None, None, theory_mean, theory_sd, p_right, ended)
     mean, sd = float(positions.mean()), float(positions.std())
-    return LegendStats(step, len(positions), mean, sd, theory_mean, theory_sd, p_right)
+    return LegendStats(step, len(positions), mean, sd, theory_mean, theory_sd, p_right, ended)
 
 
 def legend_lines(stats: LegendStats, with_theory: bool = True) -> list[str]:
@@ -148,10 +153,12 @@ def legend_lines(stats: LegendStats, with_theory: bool = True) -> list[str]:
         sd       15.20  theory    15.81
         P(right)   60%
 
-    The last line only when P(right) isn't 50%. Number columns are LEGEND_WIDTH wide: room
-    for -1000.00, the mean of 1000 steps all one way. Without `with_theory` (the wall is on:
-    the theory is for no wall) the mean and sd lines stop after the measured value. A
-    measured value is '-' when nothing was counted. (-0.00 shows as 0.00.)"""
+    The last line only when P(right) isn't 50%. With an absorbing wall the first line goes on
+    with "  absorbed     1234" (`ended`), and `trials` are the walks still going. Number columns
+    are LEGEND_WIDTH wide: room for -1000.00, the mean of 1000 steps all one way. Without
+    `with_theory` (the wall is on: the theory is for no wall) the mean and sd lines stop
+    after the measured value. A measured value is '-' when nothing was counted. (-0.00 shows
+    as 0.00.)"""
     width = LEGEND_WIDTH
 
     def number(value: float | None) -> str:
@@ -165,6 +172,8 @@ def legend_lines(stats: LegendStats, with_theory: bool = True) -> list[str]:
         mean += f"  {'theory':<7}{number(stats.theory_mean)}"
         sd += f"  {'theory':<7}{number(stats.theory_sd)}"
     steps = f"{'steps':<6}{stats.step:>{width}}  {'trials':<7}{stats.trials:>{width}}"
+    if stats.ended is not None:
+        steps += f"  {'absorbed':<9}{stats.ended:>{width}}"
     lines = [steps, mean, sd]
     if stats.p_right != 0.5:
         # Ends in the first number column's last place; whole percents (the dialog's steps).
@@ -194,7 +203,39 @@ def density_grid(paths: IntArray, lo: int, hi: int, bin_width: int = 2) -> IntAr
     return grid
 
 
-def trace_grid(paths: IntArray, lo: int, hi: int) -> tuple[IntArray, IntArray]:
+def absorb_steps(paths: IntArray, wall: int) -> IntArray:
+    """For an absorbing wall: the step at which each walk first reaches `wall` (or goes past
+    it), or the number of points (one past the last step) if it never does.
+
+    `paths` are free walks (no wall): an absorbed walk follows its free path exactly until it
+    touches the wall, and ends there. So a walk is still going at step k when k < its value
+    here; its trace runs up to and including that step. (Each step moves one position, so a
+    walk always ends exactly on the wall.)"""
+    hit = paths <= wall
+    first = hit.argmax(axis=1)
+    return np.where(hit.any(axis=1), first, paths.shape[1])
+
+
+def trace_span(paths: IntArray, absorbing_wall: int | None = None) -> tuple[int, int]:
+    """The lowest and highest position the walks' traces reach, for the x axis: every
+    position - or, with an absorbing wall, not below it (where absorbed walks would have
+    wandered after contact doesn't count).
+
+    With the wall, the low end is exact: an absorbed walk's trace never goes below the wall
+    and ends on it, and a surviving walk never reaches it, so the lowest point on any trace is
+    the wall if any walk was absorbed, else the free walks' minimum. The high end is the free
+    walks' maximum, which could only overstate the traces' if an absorbed walk had gone on to
+    the top after contact - it would just widen the axis a little. (An exact high end took
+    ~100 ms per data set.)"""
+    lo, hi = int(paths.min()), int(paths.max())
+    if absorbing_wall is not None:
+        lo = max(lo, absorbing_wall)
+    return lo, hi
+
+
+def trace_grid(
+    paths: IntArray, lo: int, hi: int, ends: IntArray | None = None
+) -> tuple[IntArray, IntArray]:
     """The walks' traces as a grid, and each step's busiest position.
 
     `segments` has shape (steps, hi - lo): row k is the stretch from step k to step k + 1,
@@ -209,7 +250,12 @@ def trace_grid(paths: IntArray, lo: int, hi: int) -> tuple[IntArray, IntArray]:
     `peaks` has shape (steps + 1,): the most walks at any one position at each step - the
     tallest histogram bar's count, since width-2 parity bins hold one position each.
 
-    `lo`..`hi` must cover every position. One column of paths at a time: low memory.
+    With `ends` (from absorb_steps, for an absorbing wall) a walk's trace stops at its
+    contact step - its last segment reaches the wall - and from that step on it isn't
+    counted in `peaks` (it has left the histogram).
+
+    `lo`..`hi` must cover every position on the traces. One column of paths at a time: low
+    memory.
     """
     runs, points = paths.shape
     n_positions = hi - lo + 1
@@ -217,11 +263,21 @@ def trace_grid(paths: IntArray, lo: int, hi: int) -> tuple[IntArray, IntArray]:
     peaks = np.zeros(points, dtype=np.int64)
     if runs == 0:
         return segments, peaks
+    n_intervals = segments.shape[1]
     for k in range(points):
-        peaks[k] = np.bincount(paths[:, k] - lo, minlength=n_positions).max()
+        # With `ends`: still going at step k means in the histogram at k, and drawing its
+        # segment to k + 1 (the last one, for a walk that touches the wall at k + 1). The
+        # others go to an extra, discarded bin - faster than picking out the walks going.
+        going = None if ends is None else ends > k
+        here = paths[:, k] - lo
+        if going is not None:
+            here = np.where(going, here, n_positions)
+        peaks[k] = np.bincount(here, minlength=n_positions + 1)[:n_positions].max()
         if k + 1 < points:
             starts = np.minimum(paths[:, k], paths[:, k + 1]) - lo
-            segments[k] = np.bincount(starts, minlength=segments.shape[1])[: segments.shape[1]]
+            if going is not None:
+                starts = np.where(going, starts, n_intervals)
+            segments[k] = np.bincount(starts, minlength=n_intervals + 1)[:n_intervals]
     return segments, peaks
 
 

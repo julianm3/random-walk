@@ -55,11 +55,15 @@ the ends of each slider jump it to its start or end.
 
 **Right-click the drawing** for:
 
-- **Wall...:** turn the reflecting wall on or off and set its position. This regenerates
-  the walks.
+- **Configure...:** turn the wall on or off, choose what it does and set its position; set
+  the bias (P(right), the chance of each step going right); and choose the random seed. OK
+  regenerates the walks if anything changed. The defaults, no wall, 50% and seed 42, give
+  the data the app starts with. The wall has two modes:
+  - **Reflect:** a walk that hits the wall bounces back off it.
+  - **Absorb:** a walk that reaches the wall ends there. Its path is drawn up to the wall,
+    and from then on it leaves the histogram, so the bars shrink as walks are absorbed. The
+    legend counts the absorbed walks.
 - **Legend:** show or hide the legend.
-- **Regenerate...:** choose a new random seed and P(right). The default, seed 42 at 50%,
-  is the data the app starts with.
 
 The buttons under the sliders step back, play or pause, and step forward. A step is one
 step in Steps mode and one trial in Trials mode.
@@ -113,7 +117,7 @@ src/random_walk/
     gui/             the PySide6 (Qt) interface
         main_window.py   the window, its controls and keyboard
         walk_view.py     the drawing area
-        dialogs.py       the Wall and Regenerate dialogs
+        dialogs.py       the Configure dialog
         fonts/           bundled fonts, each with its licence
 tests/               unit tests for the core
 tools/               font scripts (pip install -e ".[tools]")

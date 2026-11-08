@@ -90,16 +90,21 @@ version (v0.3.x).
 - **Right-click a slider**: `ValueEditor`, a frameless popup QSpinBox above the handle; Enter
   sets the slider (its handlers run as if dragged), Esc or a click outside cancels.
 - **Right-click the drawing** (`_show_drawing_menu`):
-  - Wall... (`WallDialog`): on/off and position (-120 to -1, default -30), with the grey note
-    "(Regenerates animation data)" (the user's wording). One dialog so on + position
-    regenerate once; the user may add more there later.
+  - Configure... (`configure()`, `dialogs.ConfigureDialog`, v0.4.1: replaced separate Wall...
+    and Regenerate... entries, the user's request). A grid, names left, controls right:
+    Wall - "Enabled" checkbox then "Reflect" / "Absorb" radio buttons, and on the next line
+    the Position spin box (-120 to -1, `DEFAULT_WALL` -80, the user's change; mode and
+    position greyed while off); Bias - P(right) slider (0-100% in 1% steps) between
+    "P(left) 40%" on the left and "P(right) 60%" on the right (moving right raises P(right));
+    Seed - spin box. Opens with the current values (the user's choice), from a `WalkParams`;
+    `values()` returns the chosen ones by WalkParams name for `replace(**...)`. Grey note
+    "(data will be regenerated)" (`REGENERATES_NOTE`, the user's wording). OK regenerates
+    once, only if the walks change (`_data_key` includes the wall mode while the wall is on).
   - Legend (off at start-up): box in a top corner (`LEGEND_*` constants), monospaced lines
     from `simulation.legend_lines()`: steps and trials; mean and sd, beside the theory's
     unless the wall is on; P(right) when it isn't 50%. Starts top-right; moves to the other
     top corner when the bars crowd its corner but not the other (`placement.legend_side()`,
     switches only if the other corner is covered at most half as much - hysteresis).
-  - Regenerate... (`RegenerateDialog`): seed and P(right) slider (0-100% in 1% steps,
-    labelled "P(right) 60%" / "P(left) 40%"), opening with the current values.
 - **Regenerating**: `MainWindow.regenerate(params)` pauses, stores the new `WalkParams`, and
   re-simulates only if `_data_key` changed (a new wall position while the wall is off is just
   stored), under a wait cursor; both modes keep their slider positions. ~0.3 s, ~0.4 s with
@@ -154,15 +159,30 @@ Don't propose these again without a new reason.
 - Step is +1 with probability p = P(right) (`p_right`, 0 to 1, default 0.5), -1 otherwise.
   p > 0.5 drifts right. (v0.3.0 replaced a slope angle theta; p = 0.5 gives the same walks
   as theta = 0 did.)
-- Wall: a step below WALL is reflected, position -> 2*WALL - position (equivalently
-  WALL + |position - WALL|). NOT a clamp: reflecting keeps parity, clamping doesn't.
+- Wall, Reflect mode: a step below WALL is reflected, position -> 2*WALL - position
+  (equivalently WALL + |position - WALL|). NOT a clamp: reflecting keeps parity, clamping
+  doesn't.
+- Wall, Absorb mode (v0.4.1, `WalkParams.wall_mode` "reflect" / "absorb", the user's
+  naming): a walk that reaches WALL ends there (each step moves one position, so it ends
+  exactly on it). It follows its free (no-wall) path until then, so the data is the free
+  walks plus each walk's contact step (`simulation.absorb_steps`: still going at step k iff
+  k < its value; one past the last step if never). Its trace is drawn up to and including
+  the contact point (`trace_grid(..., ends)`); from the contact step on it leaves the
+  histogram, whose bars stay shares of ALL counted trials, so they sum to the surviving
+  fraction (the user's choice). The legend's first line adds "absorbed N" and `trials` counts
+  the walks still going (mean and sd are the survivors'). In Trials mode an ended trial adds
+  nothing but still counts on the playhead. The x axis ignores where absorbed walks would
+  have wandered (`trace_span(paths, absorbing_wall)`: low end max(free min, wall), exact;
+  high end the free max). Measured at wall -30: 34.8% absorbed by step 1000 (reflection
+  principle predicts 34.3%); regenerate ~0.53 s; frame ~24 ms.
 - Parity: with or without the wall, positions after n steps share n's parity, so histogram
   bins are width 2 (`parity_bins`). Width 1 leaves every other bin empty.
 - Theory, no wall: Normal(mean = n(2p - 1), sd = sqrt(4p(1 - p) n)); per step mean 2p - 1,
   variance 4p(1 - p). At p = 0 or 1 the sd is exactly 0 and the curve is hidden.
 - Theory, wall: the core's half-normal (sd sqrt(n)) is valid only at p = 0.5 and misfits a
-  wall away from the start, so the GUI hides the curve whenever the wall is on.
-  docs/theory.md has the derivations and the folded-normal fix.
+  wall away from the start, so the GUI hides the curve whenever the wall is on, in either
+  mode. docs/theory.md has the derivations, the folded-normal fix for Reflect and the
+  method of images for Absorb.
 
 ## Architecture rules
 

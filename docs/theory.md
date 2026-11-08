@@ -75,6 +75,27 @@ different and harder problem, so no wall curve applies when p != 0.5.
 The app hides the theory curve whenever the wall is on, whatever p is. The legend still
 shows the measured mean and sd then, without theoretical values.
 
+## The absorbing wall
+
+In Absorb mode a walk that reaches the wall w ends there. Each step moves one position, so it
+always ends exactly on w. Until then it is simply the free walk, so the app simulates free
+walks and records each one's first contact step (`simulation.absorb_steps`).
+
+For a fair walk (p = 0.5) the method of images gives, for large n, the density of the walks
+still going after n steps, as a share of all the walks:
+
+    f(y) = phi(y) - phi(2w - y)        for y > w, with phi the Normal(0, sqrt(n)) density
+
+It falls to 0 at the wall, the shape the histogram shows near it. The share absorbed by step
+n is
+
+    P(absorbed by n) = 2 Phi(w / sqrt(n))        (Phi the standard normal distribution)
+
+With w = -30 and n = 1000 that is 2 Phi(-0.949) = 34.3%; the default data set has 34.8% of
+its walks absorbed. The app doesn't draw f(y) yet (the curve is hidden with the wall on);
+like the folded normal for Reflect, it holds only at p = 0.5 (a biased walk needs a drift
+term).
+
 ## Known limitations
 
 - **No theory curve with the wall:** the half-normal in the core assumes the walk starts at
