@@ -90,11 +90,16 @@ version (tested).
 
 ## History
 
-- The app began as a single file, now at `legacy/random-walk-vibe.py` for reference.
-- v0.1.0 refactored it into this package with a Dear PyGui GUI that reproduced its behaviour
-  exactly. That was checked by driving both through the same scripted session with seeded
-  generators and comparing every visible widget value.
-- That GUI moved to the `ui_prototype` branch (tag `dpg-final`), and a new PySide6 GUI was
-  built on `main` from the user's sketches (`docs/sketches/`): v0.2.x laid out the window
-  and drawing, v0.3.0 replaced the slope angle with P(right), and v0.3.1 to v0.3.7 added the
-  two modes, the step buttons and keys, exact values, the wall, the legend and Regenerate.
+- The app began as a single Python file. v0.1.0 refactored it into this package, with a
+  Dear PyGui GUI that reproduced its behaviour exactly (checked by driving both through the
+  same scripted session with seeded generators).
+- From v0.2.0 a new PySide6 GUI was built from the user's sketches (`docs/sketches/`): v0.2.x
+  laid out the window and drawing, v0.3.0 replaced the slope angle with P(right), v0.3.1 to
+  v0.3.9 added the two modes, the controls, the wall, the legend and the final layout, v0.4.x
+  the exact traces and the absorbing wall.
+- v0.5.x cleaned up: dead code removed, data generation and the density shading moved into
+  the core, and the original file, the font scripts and the Dear PyGui branch removed. All
+  are still in git history: the original file and the font scripts up to tag v0.5.1, the
+  last Dear PyGui version at commit 7a45562, just before v0.2.0.
+
+See CHANGELOG.md for each version.

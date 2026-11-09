@@ -1,27 +1,19 @@
 # random-walk
 
-An interactive explorer for 1D random walks. Every walk starts at 0 and takes 1000 steps of
-+1 or -1. The app simulates 10,000 of these walks (trials) and animates them, so you can watch
-the spread of positions grow and compare it with what the theory predicts. You can bias the
-steps to one side, put a reflecting wall in the way, and pick any subset of the trials and
-steps to look at.
+Random walks start at zero and jump either left or right.
+ - Steps mode, watch how 10,000 walks evolve over 1,000 steps (think of it as an upside-down [Galton Board](https://en.wikipedia.org/wiki/Galton_board))
+ - Trials mode, watch the histogram evolve as more walks are added.
 
+Hit play to start. Right-click the display area to add a wall, change the left / right probability, etc.
+
+**Steps Mode**  
+10,000 trials at step 400, showing density and histogram of
+their positions
 ![Steps mode: 10,000 trials at step 400, with the density of the walks and the histogram of
 their positions](docs/screenshot-steps.png)
 
-## Features
-
-- **Steps mode:** the chosen trials advance step by step. A grey density image shows where
-  the walks have been, and the histogram shows where they are now.
-- **Trials mode:** the histogram of positions at a chosen step grows one trial at a time,
-  slowly at first and then faster, filling in under the theory curve.
-- **Theory curve:** the normal distribution the positions should follow, in red.
-- **Legend:** the step, the number of trials, and their measured mean and standard deviation
-  beside the theoretical values. It moves to whichever top corner the bars leave free.
-- **Reflecting wall:** a barrier the walks bounce off, at any position from -120 to -1.
-- **Bias and seed:** regenerate the walks with a different random seed, or a different
-  P(right), the chance of each step going right.
-
+**Trials Mode**  
+Histogram of 1,500 Trials after 1000 steps each
 ![Trials mode: the histogram of 1,500 trials' final positions under the theory
 curve](docs/screenshot-trials.png)
 
@@ -40,39 +32,41 @@ The app is built with PySide6 (Qt) and has been tested on Windows 11.
 
 ## Using the app
 
-Pick a mode by clicking **Steps** or **Trials** in the selector left of the sliders. Its two
-labels also name the sliders beside them, which do different jobs in each mode:
+Pick a mode **Steps** or **Trials** 
 
 | Slider | Steps mode | Trials mode |
 |---|---|---|
-| **Steps** | The current step (the playhead): it moves as the animation plays, and you can drag it | The step whose positions are counted |
-| **Trials** | How many trials take part (the first N of the 10,000) | How many trials are in the histogram so far (the playhead) |
+| **Steps** | The current step (the playhead) | How many steps completed in each trial (e.g. histogram of 1,000 trials after 20 steps each) |
+| **Trials** | How many trials (the first N of the 10,000) | How many trials are in the histogram so far (the playhead) |
 
 Each mode remembers its own slider settings when you switch back and forth. The buttons at
 the ends of each slider jump it to its start or end.
 
-**Right-click a slider** to type an exact value, and press Enter.
+**Right-click a slider** to type an exact value.
 
-**Right-click the drawing** for:
+**Right-click the drawing** to configure the simulation.
 
-- **Configure...:** turn the wall on or off, choose what it does and set its position; set
-  the bias (P(right), the chance of each step going right); and choose the random seed. OK
-  regenerates the walks if anything changed. The defaults, no wall, 50% and seed 42, give
-  the data the app starts with. The wall has two modes:
-  - **Reflect:** a walk that hits the wall bounces back off it.
-  - **Absorb:** a walk that reaches the wall ends there. Its path is drawn up to the wall,
-    and from then on it leaves the histogram, so the bars shrink as walks are absorbed. The
-    legend counts the absorbed walks.
-- **Legend:** show or hide the legend.
-
-The buttons under the sliders step back, play or pause, and step forward. A step is one
-step in Steps mode and one trial in Trials mode.
+**Key Bindings**
 
 | Key | Action |
 |---|---|
 | Space | Play / pause |
 | Left / Right | Step back / forward (hold to repeat) |
 | Home / End | Jump to the start / end |
+
+## Features
+
+- **Steps mode:** the chosen trials advance step by step. A grey density image shows where
+  the walks have been, and the histogram shows where they are now.
+- **Trials mode:** the histogram of positions at a chosen step grows one trial at a time,
+  slowly at first and then faster, filling in under the theory curve.
+- **Theory curve:** the normal distribution the positions should follow, in red.
+- **Legend:** the step, the number of trials, and their measured mean and standard deviation
+  beside the theoretical values.
+- **Seed:** regenerate the walks with a different random seed
+- **Reflecting wall:** a barrier the walks bounce off
+- **Absorbing wall:** a barrier that stops any walk that touches it
+- **Bias, P(right):** the chance of each step going right
 
 ## What you're looking at
 
@@ -121,20 +115,14 @@ src/random_walk/
         widgets.py       slider rows, the value editor, symbol buttons
         walk_view.py     the drawing area
         dialogs.py       the Configure dialog
+
         fonts/           bundled fonts, each with its licence
 tests/               unit tests for the core
-tools/               font scripts (pip install -e ".[tools]")
 docs/                theory and design notes; sketches/ holds the GUI sketches
-legacy/              the original single-file app, kept for reference
+CHANGELOG.md         log of changes
 ```
 
 See [docs/design-notes.md](docs/design-notes.md) for how the code is organised.
-
-## History
-
-An earlier interface, built with Dear PyGui, is on the
-[`ui_prototype`](https://github.com/julianm3/random-walk/tree/ui_prototype) branch (tag
-`dpg-final`). It used a slope angle for the bias rather than P(right).
 
 ## Licence
 

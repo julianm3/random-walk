@@ -2,9 +2,10 @@
 
 The font is a subset of Noto Sans Symbols 2 (SIL OFL 1.1, licence in
 gui/fonts/NotoSansSymbols2-OFL.txt) holding just the transport symbols U+23E9-U+23FA, with its
-line height tightened around them so they centre well in buttons. It's built by
-tools/make_symbol_font.py. Bundling it keeps the symbols identical on every platform rather
-than depending on whichever system font Qt falls back to.
+line height tightened around them so they centre well in buttons. It was built by
+tools/make_symbol_font.py (fonttools), removed in v0.5.2; to rebuild the subset, get the script
+from git tag v0.5.1. Bundling it keeps the symbols identical on every platform rather than
+depending on whichever system font Qt falls back to.
 """
 
 from __future__ import annotations

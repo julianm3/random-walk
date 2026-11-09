@@ -9,13 +9,15 @@ steps (+1 or -1) is simulated at start-up and animated in a PySide6 (Qt 6) windo
 only. The GUI was built incrementally from the user's sketches (`docs/sketches/`); README.md
 describes it for users, docs/design-notes.md the structure. The project is in its clean-up
 phase (v0.5.0 removed dead code; v0.5.1 moved data generation and the density shading into
-the core, split the window's widgets out and renamed runs to trials; docs and tests next).
+the core, split the window's widgets out and renamed runs to trials; v0.5.2 removed legacy/,
+tools/ and the Dear PyGui branch and added CHANGELOG.md; GUI tests / CI are optional next).
 
 Packaged as `src/random_walk` (hatchling, Python 3.11+, MIT), at `c:\dev\random-walk`
 (outside OneDrive, to avoid sync problems with git), hosted on GitHub. Versioning: `version`
 in pyproject.toml plus an annotated git tag per release (`git tag -a vX.Y.Z -m "..."`); keep
 `__version__` in `src/random_walk/__init__.py` in sync. The user picks the version number for
-each change (patch for small changes, minor for bigger steps).
+each change (patch for small changes, minor for bigger steps). Each release adds a section
+at the top of CHANGELOG.md (a few bullets, the user's terms).
 
 ## Working with the user
 
@@ -265,22 +267,19 @@ Don't propose these again without a new reason.
               HoverColorButton, symbol buttons, keyboard_repeat), walk_view.py, dialogs.py,
               style.py, symbols.py, ui_fonts.py, position_selector.py, fonts/ (each font
               with its licence)
-    tests/     core tests            tools/  font scripts (".[tools]" extra)
+    tests/     core tests
     docs/      theory.md, design-notes.md, sketches/, screenshot-*.png
-    legacy/    the original single-file app: reference only, don't edit or import
-
-The previous Dear PyGui GUI is on the `ui_prototype` branch (tag `dpg-final`): reference only,
-don't merge it back.
+    CHANGELOG.md  one section per version, newest first
 
 ## Dependencies and licences
 
-numpy (>=2.0), PySide6-Essentials (>=6.8). Dev: pytest, ruff. Tools extra: dearpygui,
-fonttools. Optional: mypy. Check new dependencies against the MIT licence: PySide6 (LGPLv3) is
+numpy (>=2.0), PySide6-Essentials (>=6.8). Dev: pytest, ruff. Optional: mypy. Check new dependencies against the MIT licence: PySide6 (LGPLv3) is
 fine; avoid GPL-only Qt modules (Qt Charts, Qt Data Visualization, Qt Graphs).
 
 Bundled fonts (SIL OFL 1.1; ship each licence file alongside; none may be sold on its own):
-- Noto Sans Symbols 2 subset: no Reserved Font Name, so subsetting was OK. Rebuild with
-  `tools/make_symbol_font.py`.
+- Noto Sans Symbols 2 subset: no Reserved Font Name, so subsetting was OK. It was built
+  by `tools/make_symbol_font.py` (fonttools), removed in v0.5.2 with `legacy/` and the Dear
+  PyGui branch; to rebuild the subset, restore the script from tag v0.5.1.
 - Source Code Pro: Reserved Font Name "Source" (Adobe). Bundle unmodified; changing it would
   require renaming.
 
@@ -292,4 +291,3 @@ Nothing is planned. Ask the user what comes next. Candidates mentioned so far:
 - A theory curve with the wall at 50%: the folded normal in docs/theory.md.
 - Memory: `simulate_paths` holds two int64 (trials, steps) arrays, three with the wall
   (~80 MB each at 10,000 x 1000).
-- A CHANGELOG.md, if the user wants one.

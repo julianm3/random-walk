@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "random-walk"
-version = "0.5.1"
+version = "0.5.2"
 description = "Interactive 1D random walk explorer with histograms and animations"
 readme = "README.md"
 license = "MIT"
@@ -19,11 +19,6 @@ dependencies = [
 dev = [
     "pytest>=8",
     "ruff>=0.6",
-]
-# For the scripts in tools/ (font exploration), not the package itself.
-tools = [
-    "dearpygui>=2.0",
-    "fonttools>=4.40",
 ]
 
 [project.scripts]
@@ -40,7 +35,6 @@ addopts = "-ra"
 line-length = 100
 target-version = "py311"
 src = ["src", "tests"]
-extend-exclude = ["legacy"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "SIM"]
