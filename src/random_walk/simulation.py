@@ -1,4 +1,5 @@
-"""Monte Carlo simulation of 1D +/-1 random walks, with an optional reflecting wall.
+"""Monte Carlo simulation of 1D +/-1 random walks, with an optional reflecting or absorbing
+wall, and the counts the drawing needs: histogram shares, the walks' traces, legend values.
 
 numpy only - no GUI imports, so this can be tested without a display.
 """
@@ -74,7 +75,7 @@ def simulate_paths(
     Built step-major - each step's positions for every run side by side in memory - and
     returned as a transposed view (Fortran order). The wall's step-by-step loop then works
     on contiguous rows: ~0.4 s instead of ~0.8 s for 10,000 x 1000, with identical values.
-    Reading one step for every run (paths[:, k], as the density grid and histograms do) is
+    Reading one step for every run (paths[:, k], as the trace grid and histograms do) is
     contiguous too.
     """
     jumps = _jumps(runs, steps, p_right, rng)
@@ -107,11 +108,6 @@ def bin_centers(edges: BinArray) -> BinArray:
     return edges[:-1] + 1
 
 
-def position_stats(positions: IntArray) -> str:
-    """One-line 'mean = ..., sd = ...' summary of a set of positions."""
-    return f"mean = {positions.mean():.2f}, sd = {positions.std():.2f}"
-
-
 LEGEND_WIDTH = 8  # characters per number column in legend_lines()
 
 
@@ -134,7 +130,7 @@ class LegendStats(NamedTuple):
 def legend_stats(
     positions: IntArray, step: int, p_right: float, ended: int | None = None
 ) -> LegendStats:
-    """Mean and sd (population, as position_stats) of `positions` - every counted walk still
+    """Mean and sd (population sd, numpy's default) of `positions` - every counted walk still
     going at `step` - beside the theory for that step: mean step(2p - 1), sd
     sqrt(4p(1 - p) step). `ended`: how many counted walks an absorbing wall has ended."""
     theory_mean = theory.final_mean(step, p_right)
@@ -186,21 +182,6 @@ def fractions_at(positions: IntArray, bins: IntArray) -> tuple[BinArray, FloatAr
     """Bin centres and each bin's share of `positions` (raw fractions summing to 1.0)."""
     counts, edges = np.histogram(positions, bins=bins)
     return bin_centers(edges), counts / len(positions)
-
-
-def density_grid(paths: IntArray, lo: int, hi: int, bin_width: int = 2) -> IntArray:
-    """How many walks are at each (step, position bin): shape (steps + 1, bins).
-
-    Row k is step k. Column j counts positions in [lo + j*bin_width, lo + (j+1)*bin_width),
-    so with the default width every column holds one even and one odd position - walks at
-    any step land in it, whatever their parity. `lo`..`hi` must cover every position.
-    """
-    n_bins = (hi - lo) // bin_width + 1
-    steps = paths.shape[1]
-    grid = np.zeros((steps, n_bins), dtype=np.int64)
-    for step in range(steps):  # one column of paths at a time: low memory, ~30 ms for 10M
-        grid[step] = np.bincount((paths[:, step] - lo) // bin_width, minlength=n_bins)
-    return grid
 
 
 def absorb_steps(paths: IntArray, wall: int) -> IntArray:
@@ -286,65 +267,3 @@ def normalize_rows(grid: IntArray) -> FloatArray:
     on the same 0..1 scale however spread out its walks are."""
     peaks = grid.max(axis=1, keepdims=True)
     return np.divide(grid, peaks, out=np.zeros(grid.shape), where=peaks > 0)
-
-
-class HistogramSummary(NamedTuple):
-    """Everything a final-position histogram plot needs."""
-
-    centers: BinArray
-    counts: FloatArray  # probability density per bin
-    curve_x: FloatArray
-    curve_y: FloatArray
-    stats: str
-    show_curve: bool
-
-
-def summarize(
-    finals: IntArray,
-    steps: int,
-    wall_enabled: bool,
-    wall_value: int = DEFAULT_WALL,
-    p_right: float = DEFAULT_P_RIGHT,
-    bins: IntArray | None = None,
-    curve_x_range: tuple[float, float] | None = None,
-) -> HistogramSummary:
-    """Given an array of final positions, return bin centres/densities, the theory curve,
-    whether to show that curve, and a one-line stats string.
-
-    `bins` and `curve_x_range` can be fixed externally (rather than derived from `finals`)
-    so the axes don't jump around when `finals` is a growing prefix of a larger run, as in
-    the distribution animation.
-    """
-    if bins is None:
-        bins = parity_bins(finals)
-    counts, edges = np.histogram(finals, bins=bins, density=True)
-    centers = bin_centers(edges)
-
-    mean_theory = theory.final_mean(steps, p_right)
-    sigma = theory.final_sd(steps, p_right)
-
-    if curve_x_range is not None:
-        x_lo, x_hi = curve_x_range
-    else:
-        x_lo = float(wall_value if wall_enabled else finals.min())
-        x_hi = float(finals.max())
-    x = np.linspace(x_lo, x_hi, 400)
-
-    if sigma == 0:
-        # p_right = 0 or 1: every step goes the same way, so every walk ends in the same place.
-        # There is no spread for a curve to describe (and its formula would divide by zero).
-        show_curve = False
-        curve = np.zeros_like(x)
-    elif wall_enabled:
-        show_curve = theory.wall_curve_valid(p_right)
-        curve = theory.half_normal_pdf(x, wall_value, sigma)
-    else:
-        show_curve = True
-        curve = theory.normal_pdf(x, mean_theory, sigma)
-
-    stats = position_stats(finals)
-    if not wall_enabled:
-        stats += f" (theory: {mean_theory:.2f}, {sigma:.2f})"
-    stats += f", min = {finals.min()}, max = {finals.max()}"
-
-    return HistogramSummary(centers, counts, x, curve, stats, show_curve)

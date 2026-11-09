@@ -108,7 +108,6 @@ OVERLAY_BAR_OPACITY = 0.6
 STEPS_DRAWING = Drawing(
     density=True,
     histogram=True,
-    histogram_in_front=True,
     histogram_opacity=OVERLAY_BAR_OPACITY,
     theory=True,
     probability_from_theory=True,

@@ -1,22 +1,21 @@
-"""The drawing area: plots a simulated data set in one of several drawings (see `Drawing`).
+"""The drawing area: plots a simulated data set as described by a `Drawing`.
 
-Walks: the first N walks (trials), each from the bottom of the plot (step 0) to the top (the
-last step), with a step axis on the left. Histogram: the final positions of all trials, in
+Density: the walks' traces as a shaded image, from the bottom of the plot (step 0) up to the
+shown step, with a step axis on the left. Histogram: the positions at the shown step, in
 width-2 bins, as light grey bars whose heights are each bin's share of the trials, with a
-probability axis on the right. A drawing can show both (an overlay): the bars go behind the
-walks, and each keeps its own vertical axis.
+probability axis on the right, optionally with the theory curve and a legend. Steps mode
+shows both, the bars in front; Trials mode the histogram alone.
 
-Every drawing shares the x axis along the bottom: position, spanning the data set's full
-range - the lowest to the highest reached by any trial at any step - so every walk in the set
-would fit and every drawing uses the same range. Room for both side axes is always reserved,
-so the plot lines up exactly from one drawing to the next. Everything stretches to fill the
-area, and rescales (and re-picks its ticks) when the window is resized.
+Every drawing shares the x axis along the bottom: position, spanning the lowest to the highest
+position any trace reaches. Room for both side axes is always reserved, so the plot lines up
+exactly from one drawing to the next. Everything stretches to fill the area, and rescales
+(and re-picks its ticks) when the window is resized.
 
-    walks                                     histogram
+    density + histogram (Steps)              histogram (Trials)
     +-----------------------------------+     +-----------------------------------+
-    | 1000 -+           :               |     |              ___            +- 0.03|
-    |  500 -+          .:.              |     |          ___|   |___        +- 0.02|
-    |    0 -+------+------+------+---   |     |   ___|___|  ...    |___|___  +- 0  |
+    | 1000 -+         ___         +-0.03|     |              ___            +- 0.03|
+    |  500 -+     ___|:::|___     +-0.02|     |          ___|   |___        +- 0.02|
+    |    0 -+--___|::.:.:.::|___--+-0  |     |   ___|___|  ...    |___|___  +- 0  |
     |     -100     0     100            |     |  -100      0       100            |
     +-----------------------------------+     +-----------------------------------+
 """
@@ -56,10 +55,6 @@ from random_walk.simulation import (
 from random_walk.ticks import nice_step, nice_ticks, tick_label
 
 MARGIN = 8  # px; blank border inside the frame, so nothing touches it
-# One colour per walk, in trial order (trial 1 first), cycling if more are shown. Black, then
-# the Okabe-Ito palette, which stays distinguishable with common colour-vision deficiencies.
-WALK_COLORS = ("black", "#E69F00", "#56B4E9", "#009E73", "#D55E00", "#0072B2", "#CC79A7")
-WALK_WIDTH = 1.0  # px
 BAR_COLOR = "#d3d3d3"  # light grey histogram bars
 # Density shading runs from the background (no walks) to this grey (a step's busiest cell),
 # stopping short of black.
@@ -98,25 +93,18 @@ MIN_Y_TICK_SPACING = 40  # px; y labels are one line tall, so they can sit close
 
 @dataclass(frozen=True)
 class Drawing:
-    """What the drawing area shows: a density image of the walks, the first `walks` walks,
-    and/or the histogram of positions - back to front in that order, except that the
-    histogram goes in front with `histogram_in_front`. The density and histogram count the
-    first `trials` trials (None: every trial), and the histogram's bars are `histogram_color`
-    at `histogram_opacity` (below 1 lets what's behind show through). Walks take one colour
-    each from WALK_COLORS, or all `walk_color` if set, at `walk_opacity` (below 1, overlapping
-    walks build up darker, like density shading)."""
+    """What the drawing area shows: a density image of the walks' traces and/or the
+    histogram of positions, its bars in front of the density. Both count the first `trials`
+    trials (None: every trial), and the bars are `histogram_color` at `histogram_opacity`
+    (below 1 lets the density show through)."""
 
     density: bool = False
-    walks: int = 0
     histogram: bool = False
     trials: int | None = None
     histogram_color: str = BAR_COLOR
-    histogram_in_front: bool = False
     histogram_opacity: float = 1.0
-    walk_color: str | None = None
-    walk_opacity: float = 1.0
-    # Show the data set as it stood at this step (None: the last). Walks and the density stop
-    # there and the histogram counts positions at it; the axes don't change.
+    # Show the data set as it stood at this step (None: the last). The density stops there
+    # and the histogram counts positions at it; the axes don't change.
     at_step: int | None = None
     # Overlay the theoretical distribution of positions (no wall): a normal curve scaled to
     # the histogram's width-2 bins, on the probability axis.
@@ -144,21 +132,6 @@ def x_to_screen(
     lo, hi = x_range
     span = (hi - lo) or 1  # a set whose walks never move would divide by zero
     return area.left() + (np.asarray(values, dtype=float) - lo) / span * area.width()
-
-
-def walk_points(
-    path: NDArray[np.int64],
-    x_range: tuple[int, int],
-    area: QRectF,
-    total_steps: int | None = None,
-) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-    """Screen coordinates for one walk: x is the position scaled from `x_range` across the
-    area's width, y is the step scaled from the bottom (step 0) to the top (`total_steps`,
-    default the path's own last step - pass it to draw a walk cut short at its true height)."""
-    steps = len(path) - 1 if total_steps is None else total_steps
-    xs = x_to_screen(path, x_range, area)
-    ys = area.bottom() - np.arange(len(path)) / max(steps, 1) * area.height()
-    return xs, ys
 
 
 def polygon_from_arrays(xs: NDArray[np.float64], ys: NDArray[np.float64]) -> QPolygonF:
@@ -211,7 +184,7 @@ class WalkView(QFrame):
         self._steps = 0
         self._p_right = 0.5
         self._wall: int | None = None  # the reflecting wall the walks were simulated with
-        self._drawing = Drawing(walks=1)
+        self._drawing = Drawing()
         # Final-position histogram of every trial: bin centres and each bin's share.
         self._bins: NDArray[Any] = np.zeros(0)
         self._fractions: NDArray[np.float64] = np.zeros(0)
@@ -269,13 +242,6 @@ class WalkView(QFrame):
 
     def drawing(self) -> Drawing:
         return self._drawing
-
-    def set_walk_count(self, count: int) -> None:
-        """Draw the first `count` walks of the data set."""
-        self.set_drawing(Drawing(walks=max(0, count)))
-
-    def walk_count(self) -> int:
-        return self._drawing.walks
 
     def x_range(self) -> tuple[int, int]:
         """Lowest and highest position in the data set (any trial, any step)."""
@@ -404,12 +370,12 @@ class WalkView(QFrame):
         return xs, theory.normal_pdf(xs, theory.final_mean(n, self._p_right), sd) * bin_width
 
     def y_ticks(self) -> list[float]:
-        """Steps that get a tick on the left axis (only when walks are drawn)."""
+        """Steps that get a tick on the left axis (only when the density is drawn)."""
         return self._step_tick_values() if self._shows_steps() else []
 
     def _shows_steps(self) -> bool:
-        """Walks and the density image both run up the step axis."""
-        return self._drawing.walks > 0 or self._drawing.density
+        """The density image runs up the step axis."""
+        return self._drawing.density
 
     def probability_ticks(self) -> list[float]:
         """Probabilities that get a tick on the right axis (only with the histogram)."""
@@ -425,7 +391,7 @@ class WalkView(QFrame):
         )
 
     def walk_area(self) -> QRectF:
-        """The plot: its bottom edge is the x axis; the left edge carries the step axis (walks)
+        """The plot: its bottom edge is the x axis; the left edge carries the step axis (density)
         and the right edge the probability axis (histogram). Room for both side axes is always
         reserved, so the plot - and every position on the x axis - stays put when the drawing
         changes."""
@@ -457,15 +423,11 @@ class WalkView(QFrame):
             self.plotSpanChanged.emit(*span)
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        # Back to front: density, histogram bars and walks (in the drawing's order), then axes.
+        # Back to front: density, histogram bars, theory curve, wall, axes, legend.
         d = self._drawing
         if d.density and self.trial_count() > 0:
             self._paint_density(painter)
-        if d.histogram and not d.histogram_in_front:
-            self._paint_histogram(painter)
-        if d.walks > 0:
-            self._paint_walks(painter)
-        if d.histogram and d.histogram_in_front:
+        if d.histogram:
             self._paint_histogram(painter)
         if d.histogram and d.theory:
             self._paint_theory(painter)
@@ -676,19 +638,6 @@ class WalkView(QFrame):
         painter.setPen(QPen(QColor(THEORY_COLOR), THEORY_WIDTH))
         painter.drawPolyline(polygon_from_arrays(xs, ys))
         painter.restore()
-
-    def _paint_walks(self, painter: QPainter) -> None:
-        assert self._paths is not None
-        area = self.walk_area()
-        shown = min(self._drawing.walks, len(self._paths))
-        last = self.shown_step()
-        for trial in reversed(range(shown)):  # trial 1 drawn last, so it's on top
-            path = self._paths[trial, : last + 1]
-            xs, ys = walk_points(path, self._x_range, area, total_steps=self._steps)
-            color = QColor(self._drawing.walk_color or WALK_COLORS[trial % len(WALK_COLORS)])
-            color.setAlphaF(self._drawing.walk_opacity)
-            painter.setPen(QPen(color, WALK_WIDTH))
-            painter.drawPolyline(polygon_from_arrays(xs, ys))
 
     def _paint_histogram(self, painter: QPainter) -> None:
         ticks = self.probability_ticks()

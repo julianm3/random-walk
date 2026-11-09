@@ -1,18 +1,18 @@
-"""The shared RUNS/STEPS/WALL/P(right) parameters and their validation."""
+"""The data set's settings: how many walks and steps, the wall, the bias and the seed."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from random_walk.config import DEFAULT_SEED, DEFAULT_WALL_MODE, MAX_JUMPS, MAX_STEPS
+from random_walk.config import DEFAULT_SEED, DEFAULT_WALL_MODE
 
 
 @dataclass(frozen=True)
 class WalkParams:
-    """One validated set of shared parameters.
+    """One set of the data set's settings.
 
-    Frozen and hashable, so it doubles as the animation modes' cache key: two runs with equal
-    params can reuse the same simulated data.
+    Frozen and hashable; equal settings give equal walks (see MainWindow.regenerate, which
+    skips re-simulating when nothing the walks depend on changed).
     """
 
     runs: int
@@ -32,16 +32,3 @@ class WalkParams:
     def absorbing(self) -> bool:
         """The wall is on and ends the walks that reach it, rather than reflecting them."""
         return self.wall_enabled and self.wall_mode == "absorb"
-
-
-def validate(runs: int, steps: int, p_right: float) -> str | None:
-    """Return an error message to display, or None if the values are acceptable."""
-    if runs < 1 or steps < 1:
-        return "RUNS and STEPS must be at least 1"
-    if runs * steps > MAX_JUMPS:
-        return f"RUNS x STEPS is too large (max {MAX_JUMPS:,})"
-    if steps > MAX_STEPS:
-        return f"STEPS is too large (max {MAX_STEPS:,})"
-    if not 0 <= p_right <= 1:
-        return "P(right) must be between 0 and 1"
-    return None

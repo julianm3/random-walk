@@ -106,10 +106,10 @@ Type hints are used throughout. mypy is optional: `py -m pip install mypy`, then
 ```
 src/random_walk/
     config.py        default values and limits
-    params.py        WalkParams (the data set's settings) and its validation
+    params.py        WalkParams: the data set's settings
     simulation.py    simulating walks, histograms, density counts, legend values (numpy only)
-    theory.py        mean and sd for the bias, normal and half-normal curves
-    playback.py      animation timeline: play, pause, step, scrub (no GUI imports)
+    theory.py        mean and sd for the bias, the normal curve
+    playback.py      animation timeline: play, pause, jump (no GUI imports)
     pacing.py        Trials mode's slow-then-fast trial counts
     placement.py     which top corner the legend goes in
     ticks.py         round-number axis ticks

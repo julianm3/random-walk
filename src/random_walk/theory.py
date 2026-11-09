@@ -23,18 +23,3 @@ def final_sd(steps: int, p_right: float) -> float:
 def normal_pdf(x: NDArray[np.float64], mean: float, sd: float) -> NDArray[np.float64]:
     """Normal density; the large-STEPS approximation of the final position with no wall."""
     return np.exp(-((x - mean) ** 2) / (2 * sd**2)) / (sd * np.sqrt(2 * np.pi))
-
-
-def half_normal_pdf(x: NDArray[np.float64], wall: float, sd: float) -> NDArray[np.float64]:
-    """Half-normal density above `wall`; the large-STEPS approximation with a reflecting wall."""
-    return (2 / (sd * np.sqrt(2 * np.pi))) * np.exp(-((x - wall) ** 2) / (2 * sd**2))
-
-
-def wall_curve_valid(p_right: float) -> bool:
-    """The half-normal comes from the reflection principle, which needs a driftless walk.
-
-    A biased walk reflected off a wall is a materially different, more involved problem, and
-    the half-normal would just be wrong for it, so callers should hide it rather than show a
-    guess.
-    """
-    return p_right == 0.5

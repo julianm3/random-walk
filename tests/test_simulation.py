@@ -4,7 +4,6 @@ import pytest
 from random_walk.simulation import (
     LegendStats,
     absorb_steps,
-    density_grid,
     fractions_at,
     legend_lines,
     legend_stats,
@@ -12,7 +11,6 @@ from random_walk.simulation import (
     parity_bins,
     simulate,
     simulate_paths,
-    summarize,
     trace_grid,
     trace_span,
 )
@@ -148,66 +146,11 @@ def test_parity_bins_are_width_two_and_centred_on_values():
 # --- summaries -----------------------------------------------------------------------------
 
 
-def test_summarize_density_sums_to_one():
-    finals = simulate(5000, 100, wall=None, rng=rng())
-    s = summarize(finals, 100, wall_enabled=False)
-    assert (s.counts * 2).sum() == pytest.approx(1.0)
-
-
-def test_summarize_curve_spans_data_without_wall():
-    finals = simulate(5000, 100, wall=None, rng=rng())
-    s = summarize(finals, 100, wall_enabled=False)
-    assert s.show_curve
-    assert s.curve_x[0] == finals.min() and s.curve_x[-1] == finals.max()
-    assert len(s.curve_x) == len(s.curve_y) == 400
-
-
-def test_summarize_curve_starts_at_wall():
-    finals = simulate(5000, 100, wall=-10, rng=rng())
-    s = summarize(finals, 100, wall_enabled=True, wall_value=-10)
-    assert s.show_curve
-    assert s.curve_x[0] == -10
-
-
-def test_summarize_hides_wall_curve_when_biased():
-    finals = simulate(500, 100, wall=-10, p_right=0.4, rng=rng())
-    assert not summarize(finals, 100, True, -10, p_right=0.4).show_curve
-
-
-@pytest.mark.filterwarnings("error")  # no divide-by-zero warnings from the curve formulas
-@pytest.mark.parametrize("p_right", [0, 1])
-@pytest.mark.parametrize("wall_enabled", [False, True])
-def test_summarize_hides_curve_when_fully_biased(p_right, wall_enabled):
-    # At p_right = 0 or 1 the sd is 0, and a curve would divide by zero (it once spiked to
-    # ~1e14, swamping the histogram when the plot axes were fitted to it).
-    finals = simulate(200, 100, wall=-10 if wall_enabled else None, p_right=p_right, rng=rng())
-    s = summarize(finals, 100, wall_enabled, wall_value=-10, p_right=p_right)
-    assert not s.show_curve
-    assert np.isfinite(s.curve_y).all() and s.curve_y.max() == 0
-    assert (s.counts * 2).sum() == pytest.approx(1.0)
-
-
-def test_summarize_respects_fixed_bins_and_curve_range():
-    finals = simulate(500, 100, wall=None, rng=rng())
-    bins = np.arange(-101, 102, 2)
-    s = summarize(finals, 100, False, bins=bins, curve_x_range=(-50, 50))
-    assert len(s.centers) == len(bins) - 1
-    assert s.curve_x[0] == -50 and s.curve_x[-1] == 50
-
-
-def test_summarize_stats_line():
-    finals = np.array([-2, 0, 2])
-    s = summarize(finals, 2, wall_enabled=False)
-    assert s.stats == "mean = 0.00, sd = 1.63 (theory: 0.00, 1.41), min = -2, max = 2"
-    wall_stats = summarize(finals, 2, wall_enabled=True, wall_value=-2).stats
-    assert wall_stats == "mean = 0.00, sd = 1.63, min = -2, max = 2"
-
-
 def test_legend_stats_measure_and_compare_with_theory():
     s = legend_stats(np.array([-2, 0, 2, 4]), step=4, p_right=0.75)
     assert s.step == 4 and s.trials == 4
     assert s.mean == pytest.approx(1.0)
-    assert s.sd == pytest.approx(np.sqrt(5))  # population sd, as position_stats
+    assert s.sd == pytest.approx(np.sqrt(5))  # population sd (numpy's default)
     assert s.theory_mean == pytest.approx(2.0)  # 4 * (2 * 0.75 - 1)
     assert s.theory_sd == pytest.approx(np.sqrt(3))  # sqrt(4 * 0.75 * 0.25 * 4)
 
@@ -272,28 +215,6 @@ def test_fractions_at_sums_to_one():
 
 
 # --- density grid ----------------------------------------------------------------------------
-
-
-def test_density_grid_counts_walks_per_step_and_bin():
-    paths = np.array([[0, 1, 2], [0, -1, 0], [0, 1, 0]])  # 3 walks, 2 steps
-    grid = density_grid(paths, lo=-1, hi=2)
-    # bins of 2: [-1, 1) and [1, 3)
-    np.testing.assert_array_equal(grid, [[3, 0], [1, 2], [2, 1]])
-
-
-def test_density_grid_rows_sum_to_walk_count():
-    paths = simulate_paths(500, 40, wall=None, rng=rng())
-    grid = density_grid(paths, int(paths.min()), int(paths.max()))
-    assert grid.shape[0] == 41
-    assert (grid.sum(axis=1) == 500).all()
-
-
-def test_density_grid_has_no_empty_parity_columns():
-    # Width-2 bins hold one even and one odd position, so neither parity leaves gaps.
-    paths = simulate_paths(2000, 50, wall=None, rng=rng())
-    grid = density_grid(paths, int(paths.min()), int(paths.max()))
-    middle = grid[50, 5:-5]
-    assert (middle > 0).all()
 
 
 def test_trace_grid_puts_a_walk_in_the_intervals_it_crosses():

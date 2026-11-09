@@ -4,8 +4,8 @@ How the code is organised and why.
 
 ## Layers
 
-    config.py      constants: defaults, limits, playback speeds
-    params.py      WalkParams + validate()                 \
+    config.py      constants: defaults, limits, frame rate
+    params.py      WalkParams: the settings                \
     theory.py      closed-form formulas                     |
     simulation.py  walks, histograms, density, legend      |  core: numpy only, no GUI,
     playback.py    Playback timeline state machine          |  fully unit-tested

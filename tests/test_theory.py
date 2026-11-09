@@ -33,17 +33,3 @@ def test_normal_pdf_integrates_to_one():
     x = np.linspace(-200, 200, 20001)
     area = np.trapezoid(theory.normal_pdf(x, 5.0, 20.0), x)
     assert area == pytest.approx(1.0, abs=1e-6)
-
-
-def test_half_normal_pdf_integrates_to_one_above_wall():
-    wall = -30.0
-    x = np.linspace(wall, wall + 400, 20001)
-    area = np.trapezoid(theory.half_normal_pdf(x, wall, 25.0), x)
-    assert area == pytest.approx(1.0, abs=1e-6)
-
-
-def test_wall_curve_only_valid_without_drift():
-    assert theory.wall_curve_valid(0.5)
-    assert theory.wall_curve_valid(50 / 100)  # as the 0-100% slider will produce it
-    assert not theory.wall_curve_valid(0.51)
-    assert not theory.wall_curve_valid(0.49)

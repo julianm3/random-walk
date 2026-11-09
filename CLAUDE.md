@@ -6,14 +6,15 @@ Project notes for Claude Code. Read this first in every session.
 
 An interactive 1D random walk explorer in Python. A seeded data set of 10,000 trials x 1000
 steps (+1 or -1) is simulated at start-up and animated in a PySide6 (Qt 6) window, light theme
-only. The GUI was built incrementally from the user's sketches (`docs/sketches/`) and is
-complete as of v0.3.7; README.md describes it for users, docs/design-notes.md the structure.
+only. The GUI was built incrementally from the user's sketches (`docs/sketches/`); README.md
+describes it for users, docs/design-notes.md the structure. The project is in its clean-up
+phase (v0.5.0 removed dead code; architecture moves, docs and tests are next).
 
 Packaged as `src/random_walk` (hatchling, Python 3.11+, MIT), at `c:\dev\random-walk`
 (outside OneDrive, to avoid sync problems with git), hosted on GitHub. Versioning: `version`
-in pyproject.toml plus a git tag per release; keep `__version__` in
-`src/random_walk/__init__.py` in sync. Each change the user accepts gets the next patch
-version (v0.3.x).
+in pyproject.toml plus an annotated git tag per release (`git tag -a vX.Y.Z -m "..."`); keep
+`__version__` in `src/random_walk/__init__.py` in sync. The user picks the version number for
+each change (patch for small changes, minor for bigger steps).
 
 ## Working with the user
 
@@ -112,8 +113,8 @@ version (v0.3.x).
 - **Drawing** (`gui/walk_view.py`): what's shown is a frozen `Drawing` built per frame. Room
   for both side axes is always reserved, so x positions never move. With the wall on: no
   theory curve, the x range starts `WALL_MARGIN` 6 positions left of the wall, and a grey
-  line marks it at wall - 1 (the lowest bar's left edge). Walk drawing (`Drawing.walks`) is
-  still there, though no mode uses it.
+  line marks it at wall - 1 (the lowest bar's left edge). Painted back to front: density,
+  histogram bars, theory curve, wall, axes, legend.
 - **Density traces** (v0.4.0, the user's report: a lone walk at 20 after 100 steps showed
   as a bar 2 positions wide, shifted half a position): `simulation.trace_grid()` counts, per
   stretch between steps k and k + 1, the walks whose line crosses each unit interval
@@ -127,7 +128,7 @@ version (v0.3.x).
   applied there); dropping rows (Qt's nearest-neighbour scaling) cut gaps in a lone walk's
   line. Shaded per row (`DENSITY_DARKEST` #222222, `DENSITY_GAMMA` 0.3, the user's choices).
   Frame repaint ~25 ms (v0.3.9 ~23). The histogram keeps its width-2 bins (correct, the
-  user confirmed). `simulation.density_grid()` (2-wide position bins) is no longer used.
+  user confirmed).
 - **Look**: Source Code Pro everywhere (`gui/ui_fonts.py`), button symbols from a bundled Noto
   Sans Symbols 2 subset (`gui/symbols.py`, `POINT_SIZE` 16; the buttons size themselves to
   it, so it sets the slider rows' height). Sliders: 16 px tall (`SLIDER_HEIGHT`), 1 px track,
@@ -179,10 +180,10 @@ Don't propose these again without a new reason.
   bins are width 2 (`parity_bins`). Width 1 leaves every other bin empty.
 - Theory, no wall: Normal(mean = n(2p - 1), sd = sqrt(4p(1 - p) n)); per step mean 2p - 1,
   variance 4p(1 - p). At p = 0 or 1 the sd is exactly 0 and the curve is hidden.
-- Theory, wall: the core's half-normal (sd sqrt(n)) is valid only at p = 0.5 and misfits a
-  wall away from the start, so the GUI hides the curve whenever the wall is on, in either
-  mode. docs/theory.md has the derivations, the folded-normal fix for Reflect and the
-  method of images for Absorb.
+- Theory, wall: no curve is drawn while the wall is on, in either mode. The formulas that
+  would apply at p = 0.5 (the folded normal for Reflect, the method of images for Absorb)
+  are in docs/theory.md, not in the code (v0.5.0 removed an unused half-normal, which
+  misfit a wall away from the start).
 
 ## Architecture rules
 
@@ -195,10 +196,13 @@ Don't propose these again without a new reason.
   order): the wall loop and per-step reads are contiguous. Values must stay identical (tested
   against a step-by-step reference). Its random draws (`choice`, ~0.25 s) are kept as they
   are: a faster draw would change the seeded data.
-- The data set's settings travel as one frozen `WalkParams` (`params.py`, with `seed`);
-  validate with `params.validate()`.
+- The data set's settings travel as one frozen `WalkParams` (`params.py`: trials, steps,
+  wall on/value/mode, P(right), seed). Its size is fixed at 10,000 x 1000, so there's no
+  validation (v0.5.0 removed the unused `validate()`).
 - Animations are driven by `playback.Playback` (`tick(now)` returns the frame to redraw), one
-  per timeline. Draw the first frame before starting the clock (it may count the density).
+  per timeline: forward only at FPS, with play, pause, jump_to and seek (v0.5.0 removed the
+  Dear PyGui era's speed presets, reverse and fast modes). Draw the first frame before
+  starting the clock (it may count the density).
 - Performance: never build QPolygonF from per-point QPointF objects; use
   `polygon_from_arrays()` (~100x faster). Show many walks as the density image, not
   polylines.
@@ -241,7 +245,7 @@ Don't propose these again without a new reason.
 ## Layout
 
     src/random_walk/
-        config.py      defaults and limits      params.py     WalkParams, validate()
+        config.py      defaults and limits      params.py     WalkParams (the settings)
         theory.py      mean, sd, curves         simulation.py walks, histograms, density, legend
         playback.py    Playback timeline        pacing.py     TrialRamp (Trials mode)
         placement.py   legend corner            ticks.py      nice_ticks()
@@ -274,5 +278,5 @@ Nothing is planned. Ask the user what comes next. Candidates mentioned so far:
   CI (ruff, mypy, pytest on a Windows runner).
 - A theory curve with the wall at 50%: the folded normal in docs/theory.md.
 - Memory: `simulate_paths` holds two int64 (trials, steps) arrays, three with the wall
-  (~80 MB each at 10,000 x 1000; ~400 MB each at `MAX_JUMPS`).
+  (~80 MB each at 10,000 x 1000).
 - A CHANGELOG.md, if the user wants one.

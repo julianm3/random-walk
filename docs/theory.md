@@ -63,11 +63,11 @@ y >= w is
 
     f(y) = phi(y) + phi(2w - y)        where phi is the Normal(0, sqrt(n)) density
 
-The core also has the simpler half-normal centred on the wall:
+A simpler half-normal centred on the wall,
 
-    f(y) = 2 phi(y - w)                (half_normal_pdf, sd = sqrt(n))
+    f(y) = 2 phi(y - w)                (sd = sqrt(n))
 
-The two agree only when the walk starts at the wall (w = 0). See *Known limitations*.
+agrees with it only when the walk starts at the wall (w = 0). See *Known limitations*.
 
 The reflection principle needs a driftless walk. A biased walk reflected off a wall is a
 different and harder problem, so no wall curve applies when p != 0.5.
@@ -98,8 +98,9 @@ term).
 
 ## Known limitations
 
-- **No theory curve with the wall:** the half-normal in the core assumes the walk starts at
-  the wall, but it starts at 0. With the defaults (wall -30, 1000 steps, sd about 31.6) the
-  offset is about one sd and the curve visibly misfits, so the app doesn't draw it. The
-  folded normal above is the large-n fix for p = 0.5, and also handles a wall above 0; it
-  would let the app show a curve with the wall at 50%.
+- **No theory curve with the wall:** the half-normal assumes the walk starts at the wall,
+  but it starts at 0. With wall -30, 1000 steps and sd about 31.6 the offset is about one sd
+  and the curve visibly misfits, so the app doesn't draw a wall curve (an unused half-normal
+  was removed from the code in v0.5.0). The folded normal above (Reflect) and the method of
+  images (Absorb) are the large-n fixes for p = 0.5; either would let the app show a curve
+  with the wall at 50%.
