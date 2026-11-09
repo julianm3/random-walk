@@ -107,7 +107,9 @@ Type hints are used throughout. mypy is optional: `py -m pip install mypy`, then
 src/random_walk/
     config.py        default values and limits
     params.py        WalkParams: the data set's settings
-    simulation.py    simulating walks, histograms, density counts, legend values (numpy only)
+    data.py          the data set: generated from WalkParams, walks still going, bar shares
+    simulation.py    simulating walks, histograms, trace counts, legend values (numpy only)
+    density.py       the density image's shading, squeezed to the plot's height
     theory.py        mean and sd for the bias, the normal curve
     playback.py      animation timeline: play, pause, jump (no GUI imports)
     pacing.py        Trials mode's slow-then-fast trial counts
@@ -116,6 +118,7 @@ src/random_walk/
     cli.py           command-line entry point
     gui/             the PySide6 (Qt) interface
         main_window.py   the window, its controls and keyboard
+        widgets.py       slider rows, the value editor, symbol buttons
         walk_view.py     the drawing area
         dialogs.py       the Configure dialog
         fonts/           bundled fonts, each with its licence

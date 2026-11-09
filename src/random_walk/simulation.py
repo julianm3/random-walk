@@ -25,18 +25,18 @@ BinArray = NDArray[Any]
 _default_rng = np.random.default_rng(DEFAULT_SEED)
 
 
-def _jumps(runs: int, steps: int, p_right: float, rng: np.random.Generator | None) -> IntArray:
-    return (rng or _default_rng).choice([-1, 1], size=(runs, steps), p=[1 - p_right, p_right])
+def _jumps(trials: int, steps: int, p_right: float, rng: np.random.Generator | None) -> IntArray:
+    return (rng or _default_rng).choice([-1, 1], size=(trials, steps), p=[1 - p_right, p_right])
 
 
 def simulate(
-    runs: int,
+    trials: int,
     steps: int,
     wall: int | None = DEFAULT_WALL,
     p_right: float = DEFAULT_P_RIGHT,
     rng: np.random.Generator | None = None,
 ) -> IntArray:
-    """Return final positions of `runs` walks of `steps` jumps of +1 or -1.
+    """Return final positions of `trials` walks of `steps` jumps of +1 or -1.
 
     Each jump is +1 with probability `p_right` (0 to 1) and -1 otherwise.
 
@@ -47,11 +47,11 @@ def simulate(
     `rng` defaults to a module-level generator seeded with DEFAULT_SEED; pass your own
     for an independent reproducible stream.
     """
-    jumps = _jumps(runs, steps, p_right, rng)
+    jumps = _jumps(trials, steps, p_right, rng)
     if wall is None:
         return jumps.sum(axis=1)
 
-    positions = np.zeros(runs, dtype=np.int64)
+    positions = np.zeros(trials, dtype=np.int64)
     for i in range(steps):
         positions += jumps[:, i]
         np.abs(positions - wall, out=positions)  # fold anything below the wall back above it
@@ -60,7 +60,7 @@ def simulate(
 
 
 def simulate_paths(
-    runs: int,
+    trials: int,
     steps: int,
     wall: int | None = DEFAULT_WALL,
     p_right: float = DEFAULT_P_RIGHT,
@@ -68,23 +68,23 @@ def simulate_paths(
 ) -> IntArray:
     """Like simulate(), but returns the whole position history, not just the final one.
 
-    Shape (runs, steps + 1): column 0 is the starting position (always 0), column k is the
+    Shape (trials, steps + 1): column 0 is the starting position (always 0), column k is the
     position after k steps - so paths[:, -1] is exactly what simulate() would have returned
     from an identically seeded `rng`.
 
-    Built step-major - each step's positions for every run side by side in memory - and
+    Built step-major - each step's positions for every walk side by side in memory - and
     returned as a transposed view (Fortran order). The wall's step-by-step loop then works
     on contiguous rows: ~0.4 s instead of ~0.8 s for 10,000 x 1000, with identical values.
-    Reading one step for every run (paths[:, k], as the trace grid and histograms do) is
+    Reading one step for every walk (paths[:, k], as the trace grid and histograms do) is
     contiguous too.
     """
-    jumps = _jumps(runs, steps, p_right, rng)
-    positions = np.zeros((steps + 1, runs), dtype=np.int64)
+    jumps = _jumps(trials, steps, p_right, rng)
+    positions = np.zeros((steps + 1, trials), dtype=np.int64)
     if wall is None:
         # (Summing the transposed view is fastest here, ~0.3 s; a contiguous copy took 0.6.)
         np.cumsum(jumps.T, axis=0, out=positions[1:])
     else:
-        by_step = np.ascontiguousarray(jumps.T)  # (steps, runs): each step's jumps together
+        by_step = np.ascontiguousarray(jumps.T)  # (steps, trials): each step's jumps together
         for i in range(steps):
             row = positions[i + 1]
             np.add(positions[i], by_step[i], out=row)
@@ -238,11 +238,11 @@ def trace_grid(
     `lo`..`hi` must cover every position on the traces. One column of paths at a time: low
     memory.
     """
-    runs, points = paths.shape
+    trials, points = paths.shape
     n_positions = hi - lo + 1
     segments = np.zeros((points - 1, max(hi - lo, 1)), dtype=np.int64)
     peaks = np.zeros(points, dtype=np.int64)
-    if runs == 0:
+    if trials == 0:
         return segments, peaks
     n_intervals = segments.shape[1]
     for k in range(points):

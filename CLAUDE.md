@@ -8,7 +8,8 @@ An interactive 1D random walk explorer in Python. A seeded data set of 10,000 tr
 steps (+1 or -1) is simulated at start-up and animated in a PySide6 (Qt 6) window, light theme
 only. The GUI was built incrementally from the user's sketches (`docs/sketches/`); README.md
 describes it for users, docs/design-notes.md the structure. The project is in its clean-up
-phase (v0.5.0 removed dead code; architecture moves, docs and tests are next).
+phase (v0.5.0 removed dead code; v0.5.1 moved data generation and the density shading into
+the core, split the window's widgets out and renamed runs to trials; docs and tests next).
 
 Packaged as `src/random_walk` (hatchling, Python 3.11+, MIT), at `c:\dev\random-walk`
 (outside OneDrive, to avoid sync problems with git), hosted on GitHub. Versioning: `version`
@@ -76,19 +77,19 @@ each change (patch for small changes, minor for bigger steps).
     bar), not rounded, ticks the round values below - the bell keeps a steady height and the
     labels slide. 0.18 is the smallest headroom with no bar cut off at 10,000 trials.
   - Steps mode, no curve (wall on, step 0, P(right) 0 or 1): top = the tallest bar from this
-    step to the end x 1.05 (`WalkView.tallest_from()`, a suffix max of `trace_grid`'s peaks:
+    step to the end x 1.05 (`DensityShading.tallest_from()`, a suffix max of `trace_grid`'s peaks:
     each step's busiest position, as width-2 parity bins hold one position). Only shrinks as a
     run plays: no flicker, nothing cut off.
   - Trials mode: fixed to all 10,000 trials at the chosen step and its theory peak
     (`probability_from_full`); early bars are cut off at the top, by the user's choice.
 - **Controls**: step buttons = one step (Steps mode) or one trial (Trials mode), repeating
-  while held at the keyboard's delay and rate (`keyboard_repeat()`). Keys (`KEY_ACTIONS`):
+  while held at the keyboard's delay and rate (`widgets.keyboard_repeat()`). Keys (`KEY_ACTIONS`):
   Space play/pause, Left/Right step, Home/End jump. `MainWindow.eventFilter` is installed on
   the QApplication so a focused button or slider can't take them; it swallows the releases
   too, and leaves the keys alone with Ctrl/Alt/Meta or when a QLineEdit/QAbstractSpinBox has
   focus. `closeEvent` removes the filter (left installed, it was called during interpreter
   shutdown with already-deleted layouts: "Internal C++ object already deleted").
-- **Right-click a slider**: `ValueEditor`, a frameless popup QSpinBox above the handle; Enter
+- **Right-click a slider**: `widgets.ValueEditor`, a frameless popup QSpinBox above the handle; Enter
   sets the slider (its handlers run as if dragged), Esc or a click outside cancels.
 - **Right-click the drawing** (`_show_drawing_menu`):
   - Configure... (`configure()`, `dialogs.ConfigureDialog`, v0.4.1: replaced separate Wall...
@@ -100,16 +101,17 @@ each change (patch for small changes, minor for bigger steps).
     Seed - spin box. Opens with the current values (the user's choice), from a `WalkParams`;
     `values()` returns the chosen ones by WalkParams name for `replace(**...)`. Grey note
     "(data will be regenerated)" (`REGENERATES_NOTE`, the user's wording). OK regenerates
-    once, only if the walks change (`_data_key` includes the wall mode while the wall is on).
+    once, only if the walks change (`WalkParams.same_walks`: the wall mode counts while on).
   - Legend (off at start-up): box in a top corner (`LEGEND_*` constants), monospaced lines
     from `simulation.legend_lines()`: steps and trials; mean and sd, beside the theory's
     unless the wall is on; P(right) when it isn't 50%. Starts top-right; moves to the other
     top corner when the bars crowd its corner but not the other (`placement.legend_side()`,
     switches only if the other corner is covered at most half as much - hysteresis).
 - **Regenerating**: `MainWindow.regenerate(params)` pauses, stores the new `WalkParams`, and
-  re-simulates only if `_data_key` changed (a new wall position while the wall is off is just
-  stored), under a wait cursor; both modes keep their slider positions. ~0.3 s, ~0.4 s with
-  the wall, plus ~50 ms for the first density image.
+  re-simulates (`data.generate()` -> `WalkData`, handed to `WalkView.set_data()`) only if
+  not `params.same_walks(old)` (a new wall position while the wall is off is just stored),
+  under a wait cursor; both modes keep their slider positions. ~0.3 s, ~0.4-0.5 s with the
+  wall, plus ~50 ms for the first density image.
 - **Drawing** (`gui/walk_view.py`): what's shown is a frozen `Drawing` built per frame. Room
   for both side axes is always reserved, so x positions never move. With the wall on: no
   theory curve, the x range starts `WALL_MARGIN` 6 positions left of the wall, and a grey
@@ -124,8 +126,9 @@ each change (patch for small changes, minor for bigger steps).
   other. ~75 ms per count (once per number of trials; held while the Trials slider is
   dragged, `hold_density`). The same pass gives `peaks` for the axis. The plot is shorter
   than 1000 rows, so the image is squeezed to the plot's pixel height by taking the darkest
-  step in each pixel row (`_combined_rows`, cached per count and height, DENSITY_GAMMA
-  applied there); dropping rows (Qt's nearest-neighbour scaling) cut gaps in a lone walk's
+  step in each pixel row (`density.DensityShading`, the core: counts, shading, squeezing,
+  cached per count and height, gamma applied there; `WalkView.density_image()` only turns
+  its `rows()` into a QImage); dropping rows (Qt's nearest-neighbour scaling) cut gaps in a lone walk's
   line. Shaded per row (`DENSITY_DARKEST` #222222, `DENSITY_GAMMA` 0.3, the user's choices).
   Frame repaint ~25 ms (v0.3.9 ~23). The histogram keeps its width-2 bins (correct, the
   user confirmed).
@@ -188,10 +191,16 @@ Don't propose these again without a new reason.
 ## Architecture rules
 
 - Qt code lives only in `gui/`. Nothing in the core imports Qt (`cli.py` imports the GUI
-  inside `main()`). Logic worth testing goes in the core, where tests need no display.
-- `simulate()` / `simulate_paths()` take an optional `rng`. The GUI passes a fresh
-  `np.random.default_rng(params.seed)`; seed 42, P(right) 50%, no wall is the start-up data
-  (hash starting 5525f7151cfc - check it after touching the simulation).
+  inside `main()`). Logic worth testing goes in the core, where tests need no display; the
+  GUI only turns the core's numbers into pixels (v0.5.1 moved data generation and the
+  density shading out of the GUI).
+- `data.generate(params)` makes the data set (`WalkData`: paths, absorb `ends`, p_right,
+  wall, trace `span`; `going()`, `ended()`, `shares_at()`), with a fresh
+  `np.random.default_rng(params.seed)`. `simulate()` / `simulate_paths()` take an optional
+  `rng`. Seed 42, P(right) 50%, no wall is the start-up data (hash starting 5525f7151cfc,
+  tested in `test_data.py` - check it after touching the simulation).
+- "Trials" everywhere (v0.5.1 renamed `runs`: `WalkParams.trials`, `DEFAULT_TRIALS`, the
+  simulation's arguments).
 - `simulate_paths()` builds positions step-major and returns the transposed view (Fortran
   order): the wall loop and per-step reads are contiguous. Values must stay identical (tested
   against a step-by-step reference). Its random draws (`choice`, ~0.25 s) are kept as they
@@ -213,7 +222,8 @@ Don't propose these again without a new reason.
     ruff check . && ruff format .
     py -m mypy             # needs `pip install mypy`
 
-- `tests/` covers the core (theory, simulation, params, playback, ticks, pacing, placement).
+- `tests/` covers the core (theory, simulation, data, density, params, playback, ticks,
+  pacing, placement).
   No GUI tests or CI yet; pytest-qt only when asked.
 - To check the GUI, drive it invisibly on the real Windows platform:
   `widget.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen)`, `show()`, process events,
@@ -246,12 +256,15 @@ Don't propose these again without a new reason.
 
     src/random_walk/
         config.py      defaults and limits      params.py     WalkParams (the settings)
-        theory.py      mean, sd, curves         simulation.py walks, histograms, density, legend
+        data.py        WalkData, generate()     density.py    DensityShading (the image's numbers)
+        theory.py      mean, sd, curves         simulation.py walks, histograms, traces, legend
         playback.py    Playback timeline        pacing.py     TrialRamp (Trials mode)
         placement.py   legend corner            ticks.py      nice_ticks()
         cli.py         entry point
-        gui/  app.py, main_window.py, walk_view.py, dialogs.py, style.py, symbols.py,
-              ui_fonts.py, position_selector.py, fonts/ (each font with its licence)
+        gui/  app.py, main_window.py (the window), widgets.py (SliderRow, ValueEditor,
+              HoverColorButton, symbol buttons, keyboard_repeat), walk_view.py, dialogs.py,
+              style.py, symbols.py, ui_fonts.py, position_selector.py, fonts/ (each font
+              with its licence)
     tests/     core tests            tools/  font scripts (".[tools]" extra)
     docs/      theory.md, design-notes.md, sketches/, screenshot-*.png
     legacy/    the original single-file app: reference only, don't edit or import

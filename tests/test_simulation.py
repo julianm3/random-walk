@@ -73,10 +73,10 @@ def test_p_right_zero_always_steps_left():
 
 @pytest.mark.parametrize("p_right", [0.5, 0.75, 0.2])
 def test_mean_and_sd_match_theory(p_right):
-    steps, runs = 400, 20_000
-    finals = simulate(runs, steps, wall=None, p_right=p_right, rng=rng())
+    steps, trials = 400, 20_000
+    finals = simulate(trials, steps, wall=None, p_right=p_right, rng=rng())
     sd = np.sqrt(4 * p_right * (1 - p_right) * steps)
-    assert finals.mean() == pytest.approx(steps * (2 * p_right - 1), abs=5 * sd / np.sqrt(runs))
+    assert finals.mean() == pytest.approx(steps * (2 * p_right - 1), abs=5 * sd / np.sqrt(trials))
     assert finals.std() == pytest.approx(sd, rel=0.03)
 
 

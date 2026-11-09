@@ -11,11 +11,12 @@ from random_walk.config import DEFAULT_SEED, DEFAULT_WALL_MODE
 class WalkParams:
     """One set of the data set's settings.
 
-    Frozen and hashable; equal settings give equal walks (see MainWindow.regenerate, which
-    skips re-simulating when nothing the walks depend on changed).
+    Frozen and hashable; equal settings give equal walks (data.generate). same_walks() says
+    whether two settings give the same walks even when not equal (MainWindow.regenerate
+    re-simulates only when they don't).
     """
 
-    runs: int
+    trials: int
     steps: int
     wall_enabled: bool
     wall_value: int
@@ -32,3 +33,13 @@ class WalkParams:
     def absorbing(self) -> bool:
         """The wall is on and ends the walks that reach it, rather than reflecting them."""
         return self.wall_enabled and self.wall_mode == "absorb"
+
+    def same_walks(self, other: WalkParams) -> bool:
+        """`other` gives exactly the same walks: they differ, if at all, only in settings that
+        don't count while the wall is off (its position and mode)."""
+        return self._walks_key() == other._walks_key()
+
+    def _walks_key(self) -> tuple[object, ...]:
+        """What the simulated walks depend on. (The wall mode only matters while it's on.)"""
+        mode = self.wall_mode if self.wall_enabled else None
+        return (self.trials, self.steps, self.wall, mode, self.p_right, self.seed)

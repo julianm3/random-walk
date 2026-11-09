@@ -1,7 +1,7 @@
 """Default values and limits shared by the simulation core and the GUI."""
 
 # Shared parameters
-DEFAULT_RUNS = 10_000
+DEFAULT_TRIALS = 10_000
 DEFAULT_STEPS = 1000
 DEFAULT_WALL = -80  # default wall location, editable in the UI
 MIN_WALL = -120  # lowest wall position the Configure dialog accepts

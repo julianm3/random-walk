@@ -42,16 +42,10 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import QFrame, QWidget
 
 from random_walk import theory
+from random_walk.data import WalkData
+from random_walk.density import DensityShading
 from random_walk.placement import Side, legend_side
-from random_walk.simulation import (
-    fractions_at,
-    legend_lines,
-    legend_stats,
-    normalize_rows,
-    parity_bins,
-    trace_grid,
-    trace_span,
-)
+from random_walk.simulation import legend_lines, legend_stats
 from random_walk.ticks import nice_step, nice_ticks, tick_label
 
 MARGIN = 8  # px; blank border inside the frame, so nothing touches it
@@ -178,61 +172,40 @@ class WalkView(QFrame):
         super().__init__(parent)
         self.setFrameShape(QFrame.Shape.Box)
         self._plot_span = (0.0, 0.0)  # last reported by plotSpanChanged
-        self._paths: NDArray[np.int64] | None = None
-        self._ends: NDArray[np.int64] | None = None  # absorbing wall: contact steps
+        self._data = WalkData(np.zeros((0, 1), dtype=np.int64))  # none yet: see set_data
         self._x_range = (0, 0)
-        self._steps = 0
-        self._p_right = 0.5
-        self._wall: int | None = None  # the reflecting wall the walks were simulated with
         self._drawing = Drawing()
         # Final-position histogram of every trial: bin centres and each bin's share.
         self._bins: NDArray[Any] = np.zeros(0)
         self._fractions: NDArray[np.float64] = np.zeros(0)
         # Every trial's histogram shares at one other step: (step, shares); see _all_fractions_at.
         self._step_fractions: tuple[int, NDArray[np.float64]] = (-1, np.zeros(0))
-        # Density shading, counted on first use for `_density_trials` trials. With
-        # `hold_density` set, the last count is kept even if the drawing asks for another
-        # number of trials (recounting takes up to ~0.1 s, too slow while a slider is dragged).
-        self._density_shade: NDArray[np.float64] | None = None
-        self._density_trials = 0
-        # From the same count: for each step, the tallest bar's share from there to the last
-        # step (see BAR_HEADROOM).
-        self._tallest_from: NDArray[np.float64] = np.zeros(0)
+        # The density shading (density.DensityShading), counted on first use for the drawing's
+        # trials. With `hold_density` set, the last count is kept even if the drawing asks for
+        # another number of trials (recounting takes up to ~0.1 s, too slow while a slider is
+        # dragged).
+        self._density = DensityShading(self._data, 0, 0, DENSITY_GAMMA)
         self.hold_density = False
         self._legend_side: Side = "right"  # the legend's top corner; see _paint_legend
         # by (trials, last step, pixel height)
         self._density_images: dict[tuple[int, int, int], QImage] = {}
-        # The shading squeezed to the plot's height: ((trials, height), first steps, rows).
-        self._combined: tuple[tuple[int, int], NDArray[np.int64], NDArray[np.float64]] | None
-        self._combined = None
 
-    def set_paths(
-        self,
-        paths: NDArray[np.int64],
-        p_right: float = 0.5,
-        wall: int | None = None,
-        ends: NDArray[np.int64] | None = None,
-    ) -> None:
-        """The data set to draw: shape (trials, steps + 1), as from simulate_paths(), with
-        the bias and wall it was simulated with (for the theory curve and the wall line).
-        With a wall the theory curve is hidden, and the x range starts just left of it.
+    def set_data(self, data: WalkData) -> None:
+        """The data set to draw (data.generate), with the bias and wall it was simulated with
+        (for the theory curve and the wall line). With a wall the theory curve is hidden, and
+        the x range starts just left of it.
 
-        `ends` (simulation.absorb_steps) is for an absorbing wall: each walk's contact step.
-        Its trace stops there, and from that step on it leaves the histogram, whose bars
-        stay shares of all the counted trials - so they shrink as walks are absorbed."""
-        self._paths = paths
-        self._ends = ends
-        # (with an absorbing wall, where walks would have wandered after contact doesn't count)
-        lo, hi = trace_span(paths, wall if ends is not None else None)
-        if wall is not None:
-            lo = min(lo, wall - WALL_MARGIN)
+        With an absorbing wall, a walk's trace stops at its contact step, and from that step
+        on it leaves the histogram, whose bars stay shares of all the counted trials - so they
+        shrink as walks are absorbed."""
+        self._data = data
+        lo, hi = data.span
+        if data.wall is not None:
+            lo = min(lo, data.wall - WALL_MARGIN)
         self._x_range = (lo, hi)
-        self._steps = paths.shape[1] - 1
-        self._p_right = p_right
-        self._wall = wall
-        self._bins, self._fractions = self._shares_at(len(paths), self._steps)
+        self._bins, self._fractions = data.shares_at(data.trials, data.steps)
         self._step_fractions = (-1, np.zeros(0))
-        self._density_shade = None
+        self._density = DensityShading(data, lo, hi, DENSITY_GAMMA)
         self._density_images = {}
         self.update()
 
@@ -250,11 +223,12 @@ class WalkView(QFrame):
     def shown_step(self) -> int:
         """The last step the current drawing shows (its `at_step`, or the data's last)."""
         step = self._drawing.at_step
-        return self._steps if step is None else min(max(step, 0), self._steps)
+        steps = self._data.steps
+        return steps if step is None else min(max(step, 0), steps)
 
     def trial_count(self) -> int:
         """How many trials the current drawing counts (the first N of the data set)."""
-        total = 0 if self._paths is None else len(self._paths)
+        total = self._data.trials
         trials = self._drawing.trials
         return total if trials is None else min(max(trials, 0), total)
 
@@ -263,29 +237,11 @@ class WalkView(QFrame):
         counted (positions at the shown step; sums to 1, or less once an absorbing wall has
         ended walks). Empty when no trials are counted."""
         trials = self.trial_count()
-        if self._paths is None or trials == 0:
+        if trials == 0:
             return np.zeros(0), np.zeros(0)
-        if trials == len(self._paths) and self.shown_step() == self._steps:
+        if trials == self._data.trials and self.shown_step() == self._data.steps:
             return self._bins, self._fractions  # every trial's final positions, precomputed
-        return self._shares_at(trials, self.shown_step())
-
-    def _going(self, trials: int, step: int) -> NDArray[np.int64]:
-        """The positions at `step` of the first `trials` walks that are still going there
-        (all of them, unless an absorbing wall has ended some)."""
-        assert self._paths is not None
-        positions = self._paths[:trials, step]
-        if self._ends is None:
-            return positions
-        return positions[self._ends[:trials] > step]
-
-    def _shares_at(self, trials: int, step: int) -> tuple[NDArray[Any], NDArray[np.float64]]:
-        """Bin centres and each bin's share of the first `trials` trials at `step`, counting
-        only the walks still going - shares of all the trials, not of the survivors."""
-        positions = self._going(trials, step)
-        if len(positions) == 0:
-            return np.zeros(0), np.zeros(0)
-        centres, fractions = fractions_at(positions, parity_bins(positions))
-        return centres, fractions * len(positions) / trials
+        return self._data.shares_at(trials, self.shown_step())
 
     # --- geometry ------------------------------------------------------------------------
 
@@ -304,7 +260,7 @@ class WalkView(QFrame):
         return max(1, int(self._plot_height() // MIN_Y_TICK_SPACING))
 
     def _step_tick_values(self) -> list[float]:
-        return nice_ticks(0, self._steps, self._max_y_ticks(), min_step=1)
+        return nice_ticks(0, self._data.steps, self._max_y_ticks(), min_step=1)
 
     def _probability_axis(self, full: bool = False) -> tuple[list[float], float]:
         """The probability axis for the current drawing's histogram (or with `full`, every
@@ -339,10 +295,10 @@ class WalkView(QFrame):
     def _all_fractions_at(self, step: int) -> NDArray[np.float64]:
         """Each bin's share of every trial's position at `step` (~1 ms; the last one is kept,
         as an animation asks for the same step on every frame)."""
-        if step == self._steps:
+        if step == self._data.steps:
             return self._fractions
-        if self._step_fractions[0] != step and self._paths is not None:
-            self._step_fractions = (step, self._shares_at(len(self._paths), step)[1])
+        if self._step_fractions[0] != step:
+            self._step_fractions = (step, self._data.shares_at(self._data.trials, step)[1])
         return self._step_fractions[1]
 
     def _probability_tick_values(self, full: bool = False) -> list[float]:
@@ -358,16 +314,16 @@ class WalkView(QFrame):
         (positions, probabilities) across the x range. None when the sd is 0 (p = 0 or 1) or
         the wall is on (a biased walk off a wall has no simple curve, and the half-normal
         misfits a wall away from the start; see docs/theory.md)."""
-        if self._wall is not None:
+        if self._data.wall is not None:
             return None
         n = self.shown_step()
-        sd = theory.final_sd(n, self._p_right)
+        sd = theory.final_sd(n, self._data.p_right)
         if sd == 0:
             return None
         lo, hi = self._x_range
         xs = np.linspace(lo, hi, THEORY_SAMPLES)
         bin_width = 2  # the histogram's bins; positions share one parity, so one per bin
-        return xs, theory.normal_pdf(xs, theory.final_mean(n, self._p_right), sd) * bin_width
+        return xs, theory.normal_pdf(xs, theory.final_mean(n, self._data.p_right), sd) * bin_width
 
     def y_ticks(self) -> list[float]:
         """Steps that get a tick on the left axis (only when the density is drawn)."""
@@ -414,7 +370,7 @@ class WalkView(QFrame):
 
     def paintEvent(self, event: QPaintEvent) -> None:
         super().paintEvent(event)  # the frame
-        if self._paths is None or len(self._paths) == 0:
+        if self._data.trials == 0:
             return
         area = self.walk_area()
         span = (area.left(), area.right())
@@ -431,7 +387,7 @@ class WalkView(QFrame):
             self._paint_histogram(painter)
         if d.histogram and d.theory:
             self._paint_theory(painter)
-        if self._wall is not None:
+        if self._data.wall is not None:
             self._paint_wall(painter)
         if self._drawing.histogram:
             self._paint_probability_axis(painter)
@@ -445,14 +401,11 @@ class WalkView(QFrame):
     def legend_text(self) -> list[str] | None:
         """The legend's lines for the current drawing, or None when the legend is off. With
         the wall on there are no theory values (the theory is for no wall)."""
-        if not self._drawing.legend or self._paths is None:
+        if not self._drawing.legend or self._data.trials == 0:
             return None
-        step = self.shown_step()
-        trials = self.trial_count()
-        going = self._going(trials, step)
-        ended = None if self._ends is None else trials - len(going)  # (absorbing wall)
-        stats = legend_stats(going, step, self._p_right, ended)
-        return legend_lines(stats, with_theory=self._wall is None)
+        data, step, trials = self._data, self.shown_step(), self.trial_count()
+        stats = legend_stats(data.going(trials, step), step, data.p_right, data.ended(trials, step))
+        return legend_lines(stats, with_theory=data.wall is None)
 
     def legend_side(self) -> Side:
         """The top corner the legend was last drawn in ("right" until the bars crowd it)."""
@@ -509,101 +462,51 @@ class WalkView(QFrame):
         painter.restore()
 
     def density_image(self, height: int | None = None) -> QImage:
-        """The counted walks' traces as a greyscale image (simulation.trace_grid): one row per
-        stretch between steps (step 0 at the bottom), one column per unit interval between
-        positions, each row shaded relative to its own busiest cell; rows beyond the shown
-        step are left empty. Counted once per number of trials (~75 ms for 10,000 walks),
-        unless `hold_density` keeps the last count; the last few images are cached.
-
-        With `height` (px) below the number of steps, the image is that tall instead: each
-        pixel row takes the darkest of the steps it covers. Scaling down by dropping rows
-        would cut gaps into a lone walk's trace."""
-        shade = self._density_counted()
+        """The counted walks' traces as a greyscale image (density.DensityShading.rows): one
+        row per stretch between steps (step 0 at the bottom), one column per unit interval
+        between positions, darker where more walks pass; rows beyond the shown step are left
+        empty. With `height` (px) below the number of steps, the image is that tall instead,
+        each pixel row the darkest of the steps it covers. The last few images are cached."""
+        density = self._counted_density()
         last = self.shown_step()
-        rows = len(shade)
-        height = rows if height is None else min(max(height, 1), rows)
-        key = (self._density_trials, last, height)
+        steps = self._data.steps
+        height = steps if height is None else min(max(height, 1), steps)
+        key = (density.trials, last, height)
         if key not in self._density_images:
-            # `lifted`: the shade raised to DENSITY_GAMMA, which lifts the sparse cells. (For
-            # combined rows it's applied once, in the cache: the darkest of the lifted values
-            # is the lifted darkest value.)
-            if height < rows:  # combine, don't drop: the darkest step in each pixel row
-                starts, combined = self._combined_rows(height)
-                lifted = combined.copy()
-                boundary = last * height // rows  # the pixel row holding step `last`
-                if boundary < height:  # (at the last step every row is shown)
-                    lifted[boundary:] = 0  # the walks haven't got there yet
-                    if last > starts[boundary]:  # its steps before `last` are shown
-                        darkest_so_far = self._density_shade_rows(starts[boundary], last)
-                        lifted[boundary] = darkest_so_far**DENSITY_GAMMA
-            else:
-                lifted = shade.copy()
-                lifted[last:] = 0  # the walks haven't got there yet (row k runs to k + 1)
-                lifted **= DENSITY_GAMMA
+            lifted = density.rows(last, height)
             empty = self.palette().window().color().lightness()
             darkest = QColor(DENSITY_DARKEST).lightness()
             grey = np.round(empty - lifted * (empty - darkest)).astype(np.uint8)
             pixels = np.ascontiguousarray(grey[::-1])  # image rows run top-down
-            height, width = pixels.shape
-            image = QImage(pixels.data, width, height, width, QImage.Format.Format_Grayscale8)
+            rows, width = pixels.shape
+            image = QImage(pixels.data, width, rows, width, QImage.Format.Format_Grayscale8)
             if len(self._density_images) >= DENSITY_CACHE_SIZE:  # drop the oldest
                 del self._density_images[next(iter(self._density_images))]
             self._density_images[key] = image.copy()  # own the pixels; `pixels` is temporary
         return self._density_images[key]
 
-    def _combined_rows(self, height: int) -> tuple[NDArray[np.int64], NDArray[np.float64]]:
-        """The whole shading squeezed into `height` pixel rows, each the darkest of the steps
-        it covers, already raised to DENSITY_GAMMA, and each pixel row's first step. Cached
-        per count and height, so a frame only has to blank the rows beyond its step."""
-        shade = self._density_counted()
-        cache_key = (self._density_trials, height)
-        if self._combined is None or self._combined[0] != cache_key:
-            rows = len(shade)
-            pixel_rows = np.arange(rows) * height // rows  # every pixel row gets >= 1 step
-            starts = np.flatnonzero(np.diff(pixel_rows, prepend=-1))
-            combined = np.maximum.reduceat(shade, starts, axis=0) ** DENSITY_GAMMA
-            self._combined = (cache_key, starts, combined)
-        return self._combined[1], self._combined[2]
-
-    def _density_shade_rows(self, first: int, stop: int) -> NDArray[np.float64]:
-        """The darkest shade over steps `first`..`stop - 1`, cell by cell."""
-        assert self._density_shade is not None
-        return self._density_shade[first:stop].max(axis=0)
-
-    def _density_counted(self) -> NDArray[np.float64]:
-        """The density shading for the counted trials, counting them first if needed (unless
-        `hold_density` keeps the last count). The same pass gives each step's tallest
-        histogram bar (`trace_grid`'s peaks)."""
-        assert self._paths is not None
-        trials = self.trial_count()
-        if self._density_shade is None or (
-            trials != self._density_trials and not self.hold_density
-        ):
-            lo, hi = self._x_range
-            ends = None if self._ends is None else self._ends[:trials]
-            segments, peaks = trace_grid(self._paths[:trials], lo, hi, ends)
-            self._density_shade = normalize_rows(segments)
-            self._density_trials = trials
+    def _counted_density(self) -> DensityShading:
+        """The density shading, counted for the drawing's trials first if needed (~75 ms for
+        10,000 walks) - unless `hold_density` keeps the last count."""
+        density = self._density
+        may_count = not density.counted or not self.hold_density
+        if may_count and density.count(self.trial_count()):
             self._density_images = {}
-            self._combined = None  # (new walks may keep the same number of trials)
-            tallest = peaks / max(trials, 1)
-            self._tallest_from = np.maximum.accumulate(tallest[::-1])[::-1]
-        return self._density_shade
+        return density
 
     def tallest_from(self) -> NDArray[np.float64]:
         """For each step, the tallest histogram bar's share (of the counted trials) from that
         step to the last."""
-        if self._paths is None:
+        if self._data.trials == 0:
             return np.zeros(0)
-        self._density_counted()
-        return self._tallest_from
+        return self._counted_density().tallest_from()
 
     def _paint_wall(self, painter: QPainter) -> None:
         """A vertical line just left of the lowest bar a walk can reach (the bin centred on
         the wall spans wall - 1 to wall + 1), so it bounds the bars without cutting one."""
-        assert self._wall is not None
+        assert self._data.wall is not None
         area = self.walk_area()
-        x = float(x_to_screen(self._wall - 1, self._x_range, area))
+        x = float(x_to_screen(self._data.wall - 1, self._x_range, area))
         painter.save()
         painter.setClipRect(area)
         painter.setPen(QPen(QColor(WALL_COLOR), WALL_WIDTH))
@@ -683,7 +586,7 @@ class WalkView(QFrame):
 
     def _paint_step_axis(self, painter: QPainter) -> None:
         """Left axis for walk drawings: step 0 at the bottom up to the last step."""
-        self._paint_y_axis(painter, self.y_ticks(), max(self._steps, 1), right_side=False)
+        self._paint_y_axis(painter, self.y_ticks(), max(self._data.steps, 1), right_side=False)
 
     def _paint_probability_axis(self, painter: QPainter) -> None:
         """Right axis for the histogram: 0 at the bottom up to the axis top."""
