@@ -2,6 +2,13 @@
 
 What changed in each version, newest first. Every version is tagged in git (`vX.Y.Z`).
 
+## v0.5.3 (2026-11-10)
+
+No change to the app.
+
+- CLAUDE.md cleaned up: version history removed (it's in this changelog), stale facts
+  fixed, notes on the project's virtual environment and on checking refactors added.
+
 ## v0.5.2 (2026-11-09)
 
 - Removed `legacy/` (the original single-file app), `tools/` (the font scripts) and the
