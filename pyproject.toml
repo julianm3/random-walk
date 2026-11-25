@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "random-walk"
-version = "0.5.3"
+version = "0.5.4"
 description = "Interactive 1D random walk explorer with histograms and animations"
 readme = "README.md"
 license = "MIT"
@@ -19,6 +19,7 @@ dependencies = [
 dev = [
     "pytest>=8",
     "ruff>=0.6",
+    "mypy>=1.11",
 ]
 
 [project.scripts]
@@ -40,6 +41,6 @@ src = ["src", "tests"]
 select = ["E", "F", "W", "I", "UP", "B", "SIM"]
 
 [tool.mypy]
-# Optional: py -m pip install mypy && py -m mypy
+# Installed with the dev extras; run it from the project's venv: .venv\Scripts\python -m mypy
 files = ["src"]
 ignore_missing_imports = true

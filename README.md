@@ -93,7 +93,8 @@ ruff check .           # lint
 ruff format .          # format
 ```
 
-Type hints are used throughout. mypy is optional: `py -m pip install mypy`, then `py -m mypy`.
+Type hints are used throughout. mypy comes with the dev extras (`pip install -e .[dev]`);
+run it with `mypy` from the same environment.
 
 ## Project layout
 

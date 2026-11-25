@@ -215,11 +215,16 @@ Don't propose these again without a new reason.
 
 ## Testing and checks
 
-Run the tools with the project's virtual environment (the system `py` has no mypy):
+Run the tools with the project's virtual environment (the system `py` has no mypy), one
+command per line. In PowerShell (5.1 has no `&&`; chain with `;`):
 
     .venv\Scripts\python -m pytest            # core only, no display needed
-    .venv\Scripts\python -m ruff check . && .venv\Scripts\python -m ruff format .
+    .venv\Scripts\python -m ruff check .
+    .venv\Scripts\python -m ruff format .
     .venv\Scripts\python -m mypy
+
+In Git Bash, use forward slashes (`.venv/Scripts/python -m pytest`, etc.): it eats
+unquoted backslashes.
 
 - `tests/` covers the core (theory, simulation, data, density, params, playback, ticks,
   pacing, placement). No GUI tests or CI yet.
@@ -276,7 +281,7 @@ Run the tools with the project's virtual environment (the system `py` has no myp
 
 ## Dependencies and licences
 
-numpy (>=2.0), PySide6-Essentials (>=6.8). Dev: pytest, ruff. Optional: mypy. Check new
+numpy (>=2.0), PySide6-Essentials (>=6.8). Dev: pytest, ruff, mypy. Check new
 dependencies against the MIT licence: PySide6 (LGPLv3) is fine; avoid GPL-only Qt modules
 (Qt Charts, Qt Data Visualization, Qt Graphs).
 

@@ -2,6 +2,14 @@
 
 What changed in each version, newest first. Every version is tagged in git (`vX.Y.Z`).
 
+## v0.5.4 (2026-11-25)
+
+No change to the app.
+
+- mypy added to the `dev` extras; README and the pyproject comment now say to run it from
+  the project's virtual environment, not the system `py`.
+- CLAUDE.md: the check commands now run as written in PowerShell and Git Bash.
+
 ## v0.5.3 (2026-11-10)
 
 No change to the app.
